@@ -38,7 +38,15 @@ func New(cfg Config) (http.Handler, error) {
 		}
 		id := m.ID()
 		entries = append(entries, inventoryItem{id, "model", m.Provider, m.Model, m.Role})
-		models[id] = provider{m, key, client}
+		target := upstream{base: strings.TrimRight(m.BaseURL, "/"), key: key, client: client}
+		if m.Provider == NPUProvider {
+			var err error
+			target, err = npuUpstream(m.BaseURL)
+			if err != nil {
+				return nil, err
+			}
+		}
+		models[id] = provider{model: m, upstream: target}
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/models", func(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +85,23 @@ func run(w http.ResponseWriter, r *http.Request, models map[string]provider, id,
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
+	if p.model.Provider == NPUProvider {
+		p.npuCallID = newNPUCallID()
+		w.Header().Set(npuCallHeader, p.npuCallID)
+	}
 	result, err := invoke(ctx, p)
+	if errors.Is(err, errNPUOptions) {
+		fail(w, 400, errNPUOptions.Error())
+		return
+	}
+	var npuErr npuFailure
+	if p.model.Provider == NPUProvider && err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		err = npuFailure("TIMEOUT")
+	}
+	if errors.As(err, &npuErr) {
+		writeJSON(w, npuErr.status(), map[string]any{"error": map[string]string{"message": "model provider failed", "code": npuErr.Error()}})
+		return
+	}
 	if err != nil {
 		fail(w, 502, "model provider failed")
 		return

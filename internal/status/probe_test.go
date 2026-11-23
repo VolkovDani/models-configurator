@@ -3,8 +3,10 @@ package status
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -89,5 +91,49 @@ func TestRedirectAndMissingCredential(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Errorf("expected 1 upstream call, got %d", calls)
+	}
+}
+
+func TestNPUStatusMetadataOnly(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	for _, tc := range []struct {
+		name, device, loadedField string
+		valid, loaded             bool
+	}{
+		{"ready", "NPU", `,"loaded":true`, true, true},
+		{"idle", "NPU", `,"loaded":false`, true, false},
+		{"missing", "NPU", "", false, false},
+		{"wrong-device", "CPU", `,"loaded":true`, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "runtime.sock")
+			l, err := net.Listen("unix", path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/status" {
+					t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+				}
+				fmt.Fprintf(w, `{"profile":%q,"device":%q%s}`, digest, tc.device, tc.loadedField)
+			})}
+			go s.Serve(l)
+			defer s.Close()
+			i := probe(context.Background(), endpoint{provider: "openvino-npu", base: "unix://" + path})
+			state := i.state("tiny", "sha256:"+digest)
+			if !tc.valid {
+				if state.Reachability != "metadata_error" || state.Loaded != nil || state.Listed != nil {
+					t.Fatal(state)
+				}
+				return
+			}
+			if state.Reachability != "reachable" || state.Listed == nil || !*state.Listed || state.Loaded == nil || *state.Loaded != tc.loaded || state.Memory != "unknown" {
+				t.Fatalf("%+v", state)
+			}
+			wrong := i.state("tiny", strings.Repeat("b", 64))
+			if wrong.Listed == nil || *wrong.Listed || wrong.Loaded == nil || *wrong.Loaded {
+				t.Fatal(wrong)
+			}
+		})
 	}
 }

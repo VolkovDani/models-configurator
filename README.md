@@ -2,14 +2,14 @@
 
 [Русская версия](README.ru.md)
 
-A same-host model service for applications that need structured chat or embeddings. The Go server includes a read-only status page, a versioned API, an Ollama adapter and an OpenAI-compatible adapter. Each request names one configured profile. The server has no provider fallback.
+A same-host model service for applications that need structured chat or embeddings. The Go server includes a read-only status page, a versioned API, adapters for OpenVINO NPU, Ollama and OpenAI-compatible providers. Each request names one configured profile. The server has no provider fallback.
 
 ## Start with an empty inventory
 
 Use Docker Compose 2.24+ on Linux. On the development branch:
 
 ```bash
-cp -n models.example.json models.json
+test -e models.json || cp models.example.json models.json
 docker compose up --build -d
 curl http://127.0.0.1:8317/v1/models
 ```
@@ -59,4 +59,8 @@ curl -sS http://127.0.0.1:8317/v1/embeddings -H 'Content-Type: application/json'
   -d '{"model":"<embedding-profile-id>","input":["hello"],"encoding_format":"float"}'
 ```
 
-The pilot covers same-host deployment, CPU Ollama and explicit external APIs. GPU/NPU installation and specialized classifiers remain in Project Creator during migration. Run `go test -race ./...`, `go vet ./...` and `python3 tests/test_compose.py` for deterministic checks.
+## Intel NPU
+
+Run the OpenVINO worker in Docker or on the host and select its pinned generation profile from any trusted manager client. An existing Project Creator export can be mounted read-only. A fresh installation can fetch the pinned Qwen snapshot from Hugging Face and export it offline. GPU deployment profiles and specialized classifier protocols remain separate migration tasks. [NPU setup](docs/npu.md) · [Prepare a model](docs/npu-model.md)
+
+Run `go test -race ./...`, `go vet ./...`, `python3 -m unittest discover -s runtime/npu` and `python3 -m unittest discover -s tests` for deterministic checks.

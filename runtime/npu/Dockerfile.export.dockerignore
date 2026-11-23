@@ -1,0 +1,5 @@
+**
+!requirements-export.txt
+!prepare_qwen.py
+!npu_runtime.py
+!requirements-installer.txt

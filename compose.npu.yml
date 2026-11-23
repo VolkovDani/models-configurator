@@ -1,0 +1,51 @@
+# Use with compose.yml and compose.npu-host.yml on Ubuntu 26.04 amd64.
+# The installed host driver supplies only its NPU loader, UMD and compiler.
+x-bind: &bind
+  type: bind
+  bind: {create_host_path: false}
+x-readonly: &readonly
+  <<: *bind
+  read_only: true
+services:
+  npu-runtime:
+    build:
+      context: ./runtime/npu
+      dockerfile: Dockerfile
+    network_mode: none
+    user: ${MODELS_NPU_UID:?Set the nonroot runtime uid}:${MODELS_NPU_SOCKET_GID:?Set the numeric socket group}
+    group_add:
+      - ${MODELS_NPU_DEVICE_GID:?Set the group of /dev/accel/accel0}
+    devices: [/dev/accel/accel0:/dev/accel/accel0:rw]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs: [/tmp]
+    command: [serve, --model, /model, --manifest, /manifest.json, --profile, "${MODELS_NPU_PROFILE:?Pin the model manifest SHA256}", --socket, /run/models-npu/runtime.sock, --cache, /cache]
+    volumes:
+      - <<: *readonly
+        source: ${MODELS_NPU_MODEL_DIR:?Set the absolute local IR directory}
+        target: /model
+      - <<: *readonly
+        source: ${MODELS_NPU_MANIFEST:?Set the absolute manifest path}
+        target: /manifest.json
+      - <<: *bind
+        source: ${MODELS_NPU_SOCKET_DIR:?Set the absolute NPU socket directory}
+        target: /run/models-npu
+      - <<: *bind
+        source: ${MODELS_NPU_CACHE_DIR:?Set the absolute private cache directory}
+        target: /cache
+      - <<: *bind
+        source: ${MODELS_NPU_LOG_DIR:?Set the absolute runtime logs directory}
+        target: /opt/models/logs/npu
+      - <<: *readonly
+        source: /usr/lib/x86_64-linux-gnu/libze_loader.so.1
+        target: /usr/lib/x86_64-linux-gnu/libze_loader.so.1
+      - <<: *readonly
+        source: /usr/lib/x86_64-linux-gnu/libze_intel_npu.so.1
+        target: /usr/lib/x86_64-linux-gnu/libze_intel_npu.so.1
+      - <<: *readonly
+        source: /usr/lib/x86_64-linux-gnu/libopenvino_intel_npu_compiler.so
+        target: /usr/lib/x86_64-linux-gnu/libopenvino_intel_npu_compiler.so
+      - <<: *readonly
+        source: /usr/lib/x86_64-linux-gnu/libopenvino_intel_npu_compiler_loader.so
+        target: /usr/lib/x86_64-linux-gnu/libopenvino_intel_npu_compiler_loader.so
