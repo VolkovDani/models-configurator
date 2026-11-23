@@ -1,0 +1,62 @@
+# Models Configurator
+
+[English version](README.md)
+
+Сервис для приложений на одном компьютере, которым нужны генерация со структурированным ответом или эмбеддинги. Go-сервер предоставляет панель состояния, версионированный API и адаптеры для Ollama и OpenAI-совместимых провайдеров. Каждый запрос выбирает один профиль. Автоматического переключения провайдеров нет.
+
+## Запуск с пустым списком моделей
+
+Для Linux и Docker Compose 2.24+ выполните в ветке разработки:
+
+```bash
+cp -n models.example.json models.json
+docker compose up --build -d
+curl http://127.0.0.1:8317/v1/models
+```
+
+Панель открывается по адресу http://127.0.0.1:8317/. В этой конфигурации запускается только менеджер. Для запуска из исходников используйте Go 1.26+ и команду `go run ./cmd/models-configurator -config models.json`. По умолчанию сервер на хосте слушает loopback.
+
+## Добавление моделей
+
+Для локального инференса на CPU явно запустите Ollama и загрузите нужные веса. Последняя команда выводит полные SHA-256-манифесты скачанных моделей в виде контрольных сумм:
+
+```bash
+docker compose --profile cpu up -d ollama
+docker compose exec ollama ollama pull qwen2.5:7b
+docker compose exec ollama ollama pull bge-m3:567m
+docker compose exec ollama sha256sum /root/.ollama/models/manifests/registry.ollama.ai/library/{qwen2.5/7b,bge-m3/567m}
+```
+
+Отредактируйте приватный `models.json`. Укажите тег Ollama явно, включая `:latest`, если он используется. Подставьте полные контрольные суммы и оставьте только нужные записи. Адрес внешнего провайдера дан для примера. Выберите конкретное развёртывание и его версию.
+
+```json
+{
+  "models": [
+    {"name":"local-chat","provider":"ollama","base_url":"http://ollama:11434","model":"qwen2.5:7b","role":"chat","digest":"<full-qwen-sha256>"},
+    {"name":"local-embed","provider":"ollama","base_url":"http://ollama:11434","model":"bge-m3:567m","role":"embeddings","digest":"<full-bge-sha256>"},
+    {"name":"hosted-chat","provider":"openai-compatible","base_url":"https://provider.example/v1","model":"deployment-v1","revision":"snapshot-1","role":"chat","key_env":"HOSTED_API_KEY"}
+  ]
+}
+```
+
+Для провайдера с авторизацией задайте указанную переменную в приватном `providers.env` для Compose или в окружении процесса при запуске на хосте. Для передачи ключей и содержимого по недоверенной сети используйте HTTPS. После изменения конфигурации или ключа пересоздайте менеджер командой `docker compose up -d --force-recreate models-configurator`. При замене весов внешнего развёртывания оператор обновляет его ревизию. Менеджер проверяет digest Ollama до и после инференса. Локальные веса хранятся в постоянном томе Ollama менеджера.
+
+## Подключение приложений
+
+Возьмите неизменяемый ID профиля из `GET /v1/models` и передайте в поле `model`. Для клиентов на хосте базовый адрес — `http://127.0.0.1:8317/v1`. Контейнеры могут подключиться к сети `models-configurator-clients` и использовать `http://models-configurator:8317/v1`. Подключайте только доверенные приложения: в этой сети доступны все настроенные профили, включая платные внешние. В Project Creator выберите среду openai-compatible для каждой активной роли, укажите ID её профиля и добавьте `PROJECT_CREATOR_MODELS_NETWORK=models-configurator-clients` в приватную конфигурацию.
+
+| Метод | Назначение |
+| --- | --- |
+| `GET /v1/models` | Список настроенных профилей без обращения к провайдерам. |
+| `POST /v1/chat/completions` | Генерация без стриминга с возможностью задать строгую JSON Schema. |
+| `POST /v1/embeddings` | Вещественные векторы для входных текстов в размерности выбранного профиля. Для Project Creator нужны 1024 компонента. |
+| `GET /status`, `GET /` | Доступность, метаданные и время проверки. Панель обходится без инференса. Для Ollama видны отдельно наличие модели на диске и загрузка в память. |
+
+Пример второго клиента на том же хосте с настроенным ID эмбеддингов:
+
+```bash
+curl -sS http://127.0.0.1:8317/v1/embeddings -H 'Content-Type: application/json' \
+  -d '{"model":"<embedding-profile-id>","input":["hello"],"encoding_format":"float"}'
+```
+
+Пилот охватывает установку на одном хосте, CPU Ollama и явно выбранные внешние API. Во время перехода установка GPU/NPU и специальные классификаторы остаются в Project Creator. Детерминированные проверки запускаются командами `go test -race ./...`, `go vet ./...` и `python3 tests/test_compose.py`.

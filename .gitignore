@@ -1,0 +1,5 @@
+/models.json
+/providers.env
+/.env
+/logs/
+__pycache__/
