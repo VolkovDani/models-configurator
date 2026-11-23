@@ -104,6 +104,15 @@ func (m Model) validate() error {
 	if !namePattern.MatchString(m.Name) || !modelPattern.MatchString(m.Model) || (m.Role != "chat" && m.Role != "embeddings") {
 		return errors.New("invalid model name, upstream model or role")
 	}
+	if m.Provider == NPUProvider {
+		if _, err := socketPath(m.BaseURL); err != nil {
+			return err
+		}
+		if m.Role != "chat" || !digestPattern.MatchString(m.Digest) || m.KeyEnv != "" || m.Revision != "" {
+			return errors.New("OpenVINO NPU requires a local chat profile pinned by full SHA-256 digest")
+		}
+		return nil
+	}
 	u, err := url.Parse(m.BaseURL)
 	if err != nil || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(m.BaseURL, "#") {
 		return errors.New("invalid provider URL")

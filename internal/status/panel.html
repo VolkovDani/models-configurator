@@ -35,7 +35,7 @@ details code{display:block;margin-top:.6rem}
 <dt>{{$.Label "provider"}}</dt><dd>{{$.Label .Provider}}</dd>
 <dt>{{$.Label "role"}}</dt><dd>{{$.Label .Role}}</dd>
 <dt>{{$.Label "upstream"}}</dt><dd><code>{{.Model}}</code></dd>
-{{if eq .Provider "openai-compatible"}}<dt>{{$.Label "listed"}}</dt><dd>{{$.Flag .Listed}}</dd>{{end}}
+{{if or (eq .Provider "openai-compatible") (eq .Provider "openvino-npu")}}<dt>{{$.Label "listed"}}</dt><dd>{{$.Flag .Listed}}</dd>{{end}}
 <dt>{{$.Label "installed"}}</dt><dd>{{$.Flag .Installed}}</dd>
 <dt>{{$.Label "loaded"}}</dt><dd>{{$.Flag .Loaded}}</dd>
 <dt>{{$.Label "memory"}}</dt><dd>{{$.Label .Memory}}</dd>

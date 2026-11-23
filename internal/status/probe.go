@@ -3,11 +3,15 @@ package status
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/VolkovDani/models-configurator/internal/manager"
 )
 
 const metadataLimit = 1 << 20
@@ -36,6 +40,8 @@ type modelInfo struct {
 type inventory struct {
 	provider, reachability string
 	available, running     []modelInfo
+	npuProfile             string
+	npuLoaded              bool
 }
 
 type State struct {
@@ -48,6 +54,19 @@ type State struct {
 
 func probe(ctx context.Context, e endpoint) inventory {
 	i := inventory{provider: e.provider, reachability: "unreachable"}
+	if e.provider == manager.NPUProvider {
+		ctx, cancel := context.WithTimeout(ctx, metadataClient.Timeout)
+		defer cancel()
+		profile, loaded, err := manager.NPUStatus(ctx, e.base)
+		var requestErr *url.Error
+		switch {
+		case err == nil:
+			i.npuProfile, i.npuLoaded, i.reachability = profile, loaded, "reachable"
+		case !errors.As(err, &requestErr):
+			i.reachability = "metadata_error"
+		}
+		return i
+	}
 	var credential string
 	if e.keyEnv != "" {
 		credential = os.Getenv(e.keyEnv)
@@ -113,6 +132,15 @@ func readList(ctx context.Context, base, path, credential string) ([]modelInfo, 
 
 func (i inventory) state(name, digest string) State {
 	s := State{Reachability: i.reachability, Memory: "unknown"}
+	if i.provider == manager.NPUProvider {
+		if i.npuProfile != "" {
+			listed := i.npuProfile == strings.TrimPrefix(digest, "sha256:")
+			loaded := listed && i.npuLoaded
+			s.Listed = &listed
+			s.Loaded = &loaded
+		}
+		return s
+	}
 	if i.provider == "openai-compatible" {
 		if i.available != nil {
 			listed := false

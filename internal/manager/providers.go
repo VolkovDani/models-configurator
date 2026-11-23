@@ -10,12 +10,22 @@ import (
 )
 
 type provider struct {
-	model  Model
-	key    string
-	client *http.Client
+	model Model
+	upstream
 }
 
-func (p provider) request(ctx context.Context, method, path string, input, out any) error {
+type upstream struct {
+	npuCallID string
+	base      string
+	key       string
+	client    *http.Client
+}
+
+func (p upstream) request(ctx context.Context, method, path string, input, out any) error {
+	return p.requestBounded(ctx, method, path, input, out, 8<<20)
+}
+
+func (p upstream) requestBounded(ctx context.Context, method, path string, input, out any, limit int64) error {
 	var body []byte
 	if input != nil {
 		var err error
@@ -24,11 +34,14 @@ func (p provider) request(ctx context.Context, method, path string, input, out a
 			return err
 		}
 	}
-	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(p.model.BaseURL, "/")+path, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, method, p.base+path, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Accept", "application/json")
+	if p.npuCallID != "" {
+		req.Header.Set(npuCallHeader, p.npuCallID)
+	}
 	if input != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -36,18 +49,30 @@ func (p provider) request(ctx context.Context, method, path string, input, out a
 		req.Header.Set("Authorization", "Bearer "+p.key)
 	}
 	resp, err := p.client.Do(req)
+	if err != nil && p.npuCallID != "" {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return npuFailure("TIMEOUT")
+		}
+		return npuFailure("NPU_UNAVAILABLE")
+	}
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
+		if p.npuCallID != "" {
+			return parseNPUFailure(resp.StatusCode, resp.Body)
+		}
 		return errors.New("provider rejected request")
 	}
-	raw, err := readBounded(resp.Body, 8<<20)
-	if err != nil {
-		return err
+	raw, err := readBounded(resp.Body, limit)
+	if err == nil {
+		err = json.Unmarshal(raw, out)
 	}
-	return json.Unmarshal(raw, out)
+	if err != nil && p.npuCallID != "" {
+		return npuFailure("INVALID_OUTPUT")
+	}
+	return err
 }
 
 func (p provider) verify(ctx context.Context) error {
@@ -100,6 +125,9 @@ func chatResult(id, finish string, msg outputMessage) (any, error) {
 }
 
 func (p provider) chat(ctx context.Context, in chatRequestBody) (any, error) {
+	if p.model.Provider == NPUProvider {
+		return p.npuChat(ctx, in)
+	}
 	id := in.Model
 	in.Model = p.model.Model
 	if p.model.Provider == "openai-compatible" {
