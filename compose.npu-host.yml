@@ -1,0 +1,10 @@
+services:
+  models-configurator:
+    group_add:
+      - ${MODELS_NPU_SOCKET_GID:?Set the numeric group of the NPU socket}
+    volumes:
+      - type: bind
+        source: ${MODELS_NPU_SOCKET_DIR:?Set the absolute NPU socket directory}
+        target: /run/models-npu
+        read_only: true
+        bind: {create_host_path: false}
