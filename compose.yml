@@ -1,0 +1,32 @@
+services:
+  models-configurator:
+    build: .
+    command: ["-config", "/etc/models.json", "-listen", "0.0.0.0:8317"]
+    ports:
+      - "127.0.0.1:${MODELS_PORT:-8317}:8317"
+    volumes:
+      - type: bind
+        source: ${MODELS_CONFIG:-./models.json}
+        target: /etc/models.json
+        read_only: true
+        bind:
+          create_host_path: false
+    env_file:
+      - path: ./providers.env
+        required: false
+    networks: [clients, runtime]
+  ollama:
+    profiles: [cpu]
+    image: ollama/ollama:0.40.16
+    environment:
+      OLLAMA_NO_CLOUD: '1'
+      OLLAMA_HOST: 0.0.0.0:11434
+    volumes:
+      - ollama_data:/root/.ollama
+    networks: [runtime]
+networks:
+  clients:
+    name: ${MODELS_NETWORK:-models-configurator-clients}
+  runtime: {}
+volumes:
+  ollama_data: {}
