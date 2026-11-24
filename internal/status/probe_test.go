@@ -137,3 +137,34 @@ func TestNPUStatusMetadataOnly(t *testing.T) {
 		})
 	}
 }
+
+func TestBGEStatusMetadataOnly(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "worker.sock")
+	l, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pin := strings.Repeat("b", 64)
+	s := http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" || r.URL.Path != "/status" {
+			t.Errorf("unexpected worker request %s", r.URL.Path)
+		}
+		fmt.Fprintf(w, `{"profile":%q,"device":"GPU.0","loaded":true}`, pin)
+	})}
+	go s.Serve(l)
+	defer s.Close()
+	i := probe(context.Background(), endpoint{provider: "openvino-bge", base: "unix://" + path})
+	st := i.state("BAAI/bge-m3", pin)
+	if st.Reachability != "reachable" || st.Listed == nil || !*st.Listed || st.Loaded == nil || !*st.Loaded {
+		t.Fatal(st)
+	}
+	wrong := i.state("BAAI/bge-m3", strings.Repeat("0", 64))
+	if wrong.Listed == nil || *wrong.Listed || wrong.Loaded == nil || *wrong.Loaded {
+		t.Fatal(wrong)
+	}
+	for lang, words := range translations {
+		if words["openvino-bge"] == "" {
+			t.Error("missing label", lang)
+		}
+	}
+}

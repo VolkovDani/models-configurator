@@ -1,0 +1,35 @@
+# Opt in by adding this overlay to compose.yml. The manager only sees the socket.
+x-bge-bind: &bind
+  type: bind
+  bind: {create_host_path: false}
+services:
+  models-configurator:
+    group_add:
+      - ${MODELS_BGE_SOCKET_GID:?Set the numeric group of the BGE socket}
+    volumes:
+      - <<: *bind
+        source: ${MODELS_BGE_SOCKET_DIR:?Set the absolute BGE socket directory}
+        target: /run/models-bge
+        read_only: true
+  bge-runtime:
+    build:
+      context: .
+      dockerfile: runtime/bge/Dockerfile
+    network_mode: none
+    user: ${MODELS_BGE_UID:?Set the nonroot runtime uid}:${MODELS_BGE_SOCKET_GID:?Set the numeric socket group}
+    group_add:
+      - ${MODELS_BGE_DEVICE_GID:?Set the numeric group of /dev/dri/renderD128}
+    devices: [/dev/dri/renderD128:/dev/dri/renderD128:rw]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs: [/tmp]
+    command: [--model, /model, --profile, "${MODELS_BGE_PROFILE:?Pin the local BGE profile SHA256}", --socket, /run/models-bge/runtime.sock]
+    volumes:
+      - <<: *bind
+        source: ${MODELS_BGE_MODEL_DIR:?Set the absolute prepared BGE model directory}
+        target: /model
+        read_only: true
+      - <<: *bind
+        source: ${MODELS_BGE_SOCKET_DIR:?Set the absolute BGE socket directory}
+        target: /run/models-bge

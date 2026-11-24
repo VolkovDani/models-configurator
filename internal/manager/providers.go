@@ -9,6 +9,10 @@ import (
 	"strings"
 )
 
+type upstreamStatus int
+
+func (s upstreamStatus) Error() string { return http.StatusText(int(s)) }
+
 type provider struct {
 	model Model
 	upstream
@@ -64,7 +68,7 @@ func (p upstream) requestBounded(ctx context.Context, method, path string, input
 		if p.npuCallID != "" {
 			return parseNPUFailure(resp.StatusCode, resp.Body)
 		}
-		return errors.New("provider rejected request")
+		return upstreamStatus(resp.StatusCode)
 	}
 	raw, err := readBounded(resp.Body, limit)
 	if err == nil {
@@ -231,6 +235,17 @@ func embeddingResult(id string, rows []embeddingRow, n int, want *int) (any, err
 }
 
 func (p provider) embed(ctx context.Context, in embeddingRequest) (any, error) {
+	if p.model.Provider == BGEProvider {
+		result, err := p.bgeEncode(ctx, in.Input, []string{"dense"})
+		if err != nil {
+			return nil, err
+		}
+		rows := make([]embeddingRow, len(result.Data))
+		for i, row := range result.Data {
+			rows[i] = embeddingRow{Index: &i, Embedding: row.Dense}
+		}
+		return embeddingResult(in.Model, rows, len(in.Input), in.Dimensions)
+	}
 	id := in.Model
 	in.Model = p.model.Model
 	if p.model.Provider == "openai-compatible" {

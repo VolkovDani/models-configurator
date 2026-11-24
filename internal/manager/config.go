@@ -104,6 +104,15 @@ func (m Model) validate() error {
 	if !namePattern.MatchString(m.Name) || !modelPattern.MatchString(m.Model) || (m.Role != "chat" && m.Role != "embeddings") {
 		return errors.New("invalid model name, upstream model or role")
 	}
+	if m.Provider == BGEProvider {
+		if _, err := socketPath(m.BaseURL); err != nil {
+			return err
+		}
+		if m.Model != "BAAI/bge-m3" || m.Role != "embeddings" || !digestPattern.MatchString(m.Digest) || m.Revision != "" || m.KeyEnv != "" {
+			return errors.New("OpenVINO BGE requires a local BAAI/bge-m3 embedding profile pinned by full SHA-256 digest")
+		}
+		return nil
+	}
 	if m.Provider == NPUProvider {
 		if _, err := socketPath(m.BaseURL); err != nil {
 			return err

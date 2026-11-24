@@ -73,4 +73,6 @@ Choose a positive integer that your hardware and providers can sustain. Each Ope
 
 Run the OpenVINO worker in Docker or on the host and select its pinned generation profile from any trusted manager client. An existing Project Creator export can be mounted read-only. A fresh installation can fetch the pinned Qwen snapshot from Hugging Face and export it offline. GPU deployment profiles and specialized classifier protocols remain separate migration tasks. [NPU setup](docs/npu.md) · [Prepare a model](docs/npu-model.md)
 
+[Run BGE-M3 on Intel Arc](docs/bge-arc.md) for dense embeddings and optional sparse and ColBERT representations.
+
 Run `go test -race ./...`, `go vet ./...`, `python3 -m unittest discover -s runtime/npu` and `python3 -m unittest discover -s tests` for deterministic checks.
