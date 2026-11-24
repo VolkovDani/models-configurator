@@ -8,7 +8,7 @@ var translations = map[string]map[string]string{
 		"installed": "Installed", "loaded": "Loaded", "memory": "Memory placement", "reachable": "Metadata available",
 		"unreachable": "Unreachable", "metadata_error": "Metadata unavailable", "credential_missing": "Credential missing", "unchecked": "Unchecked",
 		"unknown": "Unknown", "yes": "Yes", "no": "No", "cpu": "CPU", "gpu": "GPU", "cpu_gpu": "CPU + GPU",
-		"openvino-npu": "OpenVINO NPU", "ollama": "Ollama", "openai-compatible": "OpenAI-compatible API", "chat": "Chat", "embeddings": "Embeddings",
+		"openvino-bge": "OpenVINO BGE-M3 (GPU)", "openvino-npu": "OpenVINO NPU", "ollama": "Ollama", "openai-compatible": "OpenAI-compatible API", "chat": "Chat", "embeddings": "Embeddings",
 	},
 	"ru": {
 		"empty": "Модели не настроены. Добавьте профиль в файл конфигурации и перезапустите Models Configurator.",
@@ -17,6 +17,6 @@ var translations = map[string]map[string]string{
 		"installed": "Установлена", "loaded": "Загружена", "memory": "Размещение в памяти", "reachable": "Метаданные доступны",
 		"unreachable": "Нет связи", "metadata_error": "Метаданные недоступны", "credential_missing": "Нет ключа доступа", "unchecked": "Проверка не выполнена",
 		"unknown": "Неизвестно", "yes": "Да", "no": "Нет", "cpu": "CPU", "gpu": "GPU", "cpu_gpu": "CPU + GPU",
-		"openvino-npu": "OpenVINO NPU", "ollama": "Ollama", "openai-compatible": "OpenAI-совместимый API", "chat": "Диалог", "embeddings": "Эмбеддинги",
+		"openvino-bge": "OpenVINO BGE-M3 (GPU)", "openvino-npu": "OpenVINO NPU", "ollama": "Ollama", "openai-compatible": "OpenAI-совместимый API", "chat": "Диалог", "embeddings": "Эмбеддинги",
 	},
 }

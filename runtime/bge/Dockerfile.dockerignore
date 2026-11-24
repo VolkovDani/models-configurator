@@ -1,0 +1,9 @@
+**
+!runtime/
+!runtime/bge/
+!runtime/bge/engine.py
+!runtime/bge/server.py
+!runtime/bge/requirements.txt
+!runtime/npu/
+!runtime/npu/npu_runtime.py
+!runtime/npu/requirements-installer.txt

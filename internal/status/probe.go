@@ -40,8 +40,8 @@ type modelInfo struct {
 type inventory struct {
 	provider, reachability string
 	available, running     []modelInfo
-	npuProfile             string
-	npuLoaded              bool
+	socketProfile          string
+	socketLoaded           bool
 }
 
 type State struct {
@@ -54,14 +54,18 @@ type State struct {
 
 func probe(ctx context.Context, e endpoint) inventory {
 	i := inventory{provider: e.provider, reachability: "unreachable"}
-	if e.provider == manager.NPUProvider {
+	if e.provider == manager.NPUProvider || e.provider == manager.BGEProvider {
 		ctx, cancel := context.WithTimeout(ctx, metadataClient.Timeout)
 		defer cancel()
-		profile, loaded, err := manager.NPUStatus(ctx, e.base)
+		readStatus := manager.NPUStatus
+		if e.provider == manager.BGEProvider {
+			readStatus = manager.BGEStatus
+		}
+		profile, loaded, err := readStatus(ctx, e.base)
 		var requestErr *url.Error
 		switch {
 		case err == nil:
-			i.npuProfile, i.npuLoaded, i.reachability = profile, loaded, "reachable"
+			i.socketProfile, i.socketLoaded, i.reachability = profile, loaded, "reachable"
 		case !errors.As(err, &requestErr):
 			i.reachability = "metadata_error"
 		}
@@ -132,10 +136,10 @@ func readList(ctx context.Context, base, path, credential string) ([]modelInfo, 
 
 func (i inventory) state(name, digest string) State {
 	s := State{Reachability: i.reachability, Memory: "unknown"}
-	if i.provider == manager.NPUProvider {
-		if i.npuProfile != "" {
-			listed := i.npuProfile == strings.TrimPrefix(digest, "sha256:")
-			loaded := listed && i.npuLoaded
+	if i.provider == manager.NPUProvider || i.provider == manager.BGEProvider {
+		if i.socketProfile != "" {
+			listed := i.socketProfile == strings.TrimPrefix(digest, "sha256:")
+			loaded := listed && i.socketLoaded
 			s.Listed = &listed
 			s.Loaded = &loaded
 		}

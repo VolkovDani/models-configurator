@@ -46,9 +46,9 @@ func NewWithConcurrency(cfg Config, maxParallel int) (http.Handler, error) {
 		id := m.ID()
 		entries = append(entries, inventoryItem{id, "model", m.Provider, m.Model, m.Role})
 		target := upstream{base: strings.TrimRight(m.BaseURL, "/"), key: key, client: client}
-		if m.Provider == NPUProvider {
+		if m.Provider == NPUProvider || m.Provider == BGEProvider {
 			var err error
-			target, err = npuUpstream(m.BaseURL)
+			target, err = socketUpstream(m.BaseURL)
 			if err != nil {
 				return nil, err
 			}
@@ -92,7 +92,30 @@ func NewWithConcurrency(cfg Config, maxParallel int) (http.Handler, error) {
 		if !ok {
 			return
 		}
+		if p.model.Provider == BGEProvider && in.Dimensions != nil && *in.Dimensions != bgeDimensions {
+			fail(w, 400, "BGE-M3 returns 1024 dimensions")
+			return
+		}
 		queue.run(w, r, p, func(ctx context.Context) (any, error) { return p.embed(ctx, in) })
+	})
+	mux.HandleFunc("POST /v1/bge-m3/encode", func(w http.ResponseWriter, r *http.Request) {
+		var in bgeRequest
+		if !readInput(w, r, &in) {
+			return
+		}
+		if !in.valid() {
+			fail(w, 400, "invalid BGE-M3 request")
+			return
+		}
+		p, ok := lookupProvider(w, models, in.Model, "embeddings")
+		if !ok {
+			return
+		}
+		if p.model.Provider != BGEProvider {
+			fail(w, 404, "unknown model for this operation")
+			return
+		}
+		queue.run(w, r, p, func(ctx context.Context) (any, error) { return p.bgeEncode(ctx, in.Input, in.Modes) })
 	})
 	return mux, nil
 }
@@ -103,8 +126,10 @@ func lookupProvider(w http.ResponseWriter, models map[string]provider, id, role 
 		fail(w, 404, "unknown model for this operation")
 		return provider{}, false
 	}
-	if p.model.Provider == NPUProvider {
+	if p.socket != "" {
 		p.upstream = p.resolveSocket()
+	}
+	if p.model.Provider == NPUProvider {
 		p.npuCallID = newNPUCallID()
 		w.Header().Set(npuCallHeader, p.npuCallID)
 	}
@@ -140,6 +165,14 @@ func (d *dispatcher) run(w http.ResponseWriter, r *http.Request, p provider, inv
 	if errors.As(err, &npuErr) {
 		writeNPUFailure(w, npuErr)
 		return
+	}
+	var workerStatus upstreamStatus
+	if p.model.Provider == BGEProvider && errors.As(err, &workerStatus) {
+		switch workerStatus {
+		case 409, 413, 503:
+			fail(w, int(workerStatus), http.StatusText(int(workerStatus)))
+			return
+		}
 	}
 	if err != nil {
 		fail(w, 502, "model provider failed")

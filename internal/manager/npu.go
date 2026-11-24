@@ -60,12 +60,12 @@ func socketPath(base string) (string, error) {
 	if err != nil || !strings.HasPrefix(base, "unix:///") || u.Host != "" || u.User != nil ||
 		u.RawQuery != "" || u.ForceQuery || strings.Contains(base, "#") || !filepath.IsAbs(u.Path) ||
 		u.Path == "/" || u.Path != filepath.Clean(u.Path) || strings.ContainsAny(u.Path, "\x00\r\n") {
-		return "", errors.New("OpenVINO NPU requires an absolute Unix socket URL")
+		return "", errors.New("OpenVINO requires an absolute Unix socket URL")
 	}
 	return u.Path, nil
 }
 
-func npuUpstream(base string) (upstream, error) {
+func socketUpstream(base string) (upstream, error) {
 	path, err := socketPath(base)
 	if err != nil {
 		return upstream{}, err
@@ -112,7 +112,7 @@ func (b npuBinding) check(expectedProfile string) error {
 
 // NPUStatus reads passive metadata. The runtime never starts a worker for /status.
 func NPUStatus(ctx context.Context, base string) (profile string, loaded bool, err error) {
-	target, err := npuUpstream(base)
+	target, err := socketUpstream(base)
 	if err != nil {
 		return "", false, err
 	}
