@@ -73,4 +73,6 @@ MODELS_MAX_PARALLEL_REQUESTS=2
 
 Рабочий процесс OpenVINO можно запустить в Docker или на хосте и выбрать его закреплённый профиль генерации в доверенном клиенте менеджера. Существующий экспорт Project Creator подключается на чтение. При новой установке можно скачать зафиксированную версию Qwen с Hugging Face и экспортировать её без сети. Перенос профилей GPU и специальных протоколов классификаторов ведётся отдельно. [Настройка NPU](docs/npu.ru.md) · [Подготовка модели](docs/npu-model.ru.md)
 
+[Запуск BGE-M3 на Intel Arc](docs/bge-arc.ru.md) поддерживает плотные эмбеддинги и экспериментальные представления Sparse и ColBERT.
+
 Детерминированные проверки запускаются командами `go test -race ./...`, `go vet ./...`, `python3 -m unittest discover -s runtime/npu` и `python3 -m unittest discover -s tests`.

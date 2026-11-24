@@ -59,7 +59,7 @@ class EngineTests(unittest.TestCase):
                 engine.Engine(Path('/unused'), '0' * 64, device=device)
 
     def test_model_profile_dense_token_ceiling(self):
-        self.assertEqual(engine.profile_spec({})['dense_tokens'], 512)
+        self.assertEqual(engine.profile_spec({})['dense_tokens'], 4096)
 
     def test_sparse_max_and_specials(self):
         self.assertEqual(engine.lexical_weights(
@@ -74,7 +74,7 @@ class EngineTests(unittest.TestCase):
                     ids = [0] + [4] * int(text) + [2]
                 return Tokens()
         runner._tokenizer = Tokenizer()
-        for texts, modes in [(['127'], ['sparse']), (['511'], ['dense']),
+        for texts, modes in [(['127'], ['sparse']), (['4095'], ['dense']),
                              (['1'] * 5, ['colbert']), (['1', '127'], ['dense', 'sparse'])]:
             with self.subTest(texts=texts), self.assertRaises(engine.InputLimitError):
                 runner.encode(texts, modes)
