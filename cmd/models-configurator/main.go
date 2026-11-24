@@ -1,9 +1,12 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/VolkovDani/models-configurator/internal/manager"
@@ -35,8 +38,24 @@ func main() {
 	log.Fatal(srv.ListenAndServe())
 }
 
+func parallelRequestLimit() (int, error) {
+	value, set := os.LookupEnv("MODELS_MAX_PARALLEL_REQUESTS")
+	if !set {
+		return 1, nil
+	}
+	limit, err := strconv.Atoi(value)
+	if err != nil || limit < 1 {
+		return 0, errors.New("MODELS_MAX_PARALLEL_REQUESTS must be a positive integer")
+	}
+	return limit, nil
+}
+
 func service(cfg manager.Config) (http.Handler, error) {
-	api, err := manager.New(cfg)
+	limit, err := parallelRequestLimit()
+	if err != nil {
+		return nil, err
+	}
+	api, err := manager.NewWithConcurrency(cfg, limit)
 	if err != nil {
 		return nil, err
 	}

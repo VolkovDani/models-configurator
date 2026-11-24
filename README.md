@@ -59,6 +59,16 @@ curl -sS http://127.0.0.1:8317/v1/embeddings -H 'Content-Type: application/json'
   -d '{"model":"<embedding-profile-id>","input":["hello"],"encoding_format":"float"}'
 ```
 
+## Concurrent requests
+
+The manager runs one inference request at a time by default. Chat and embedding requests share the limit. To allow two independent runtimes to work at once, set the following in the manager's private `.env` and apply it with `docker compose up -d models-configurator`. For a native launch, export the variable before starting the server.
+
+```dotenv
+MODELS_MAX_PARALLEL_REQUESTS=2
+```
+
+Choose a positive integer that your hardware and providers can sustain. Each OpenVINO runtime socket serves one generation at a time even if several profiles point to it. A request for a free runtime can proceed while another waits for its socket. Up to 128 requests may wait in each manager process. A full queue returns HTTP 429. Waiting counts toward the two-minute request deadline, and disconnecting while queued removes the request.
+
 ## Intel NPU
 
 Run the OpenVINO worker in Docker or on the host and select its pinned generation profile from any trusted manager client. An existing Project Creator export can be mounted read-only. A fresh installation can fetch the pinned Qwen snapshot from Hugging Face and export it offline. GPU deployment profiles and specialized classifier protocols remain separate migration tasks. [NPU setup](docs/npu.md) · [Prepare a model](docs/npu-model.md)
