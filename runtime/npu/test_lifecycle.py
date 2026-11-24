@@ -1,5 +1,6 @@
 """Deterministic process/transport tests: no OpenVINO packages or weights needed."""
 import contextlib
+from concurrent.futures import ThreadPoolExecutor
 import errno
 import http.client
 from http.server import HTTPServer
@@ -199,10 +200,25 @@ class RuntimeLifecycleTests(unittest.TestCase):
         self.assertTrue(process.terminated)
         self.assertFalse(runtime.lock.locked())
 
-    def test_next_health_recovers_worker_after_client_disconnect(self):
+    def test_next_health_waits_for_in_flight_disconnect_and_recovers_worker(self):
         server, client = self.sockets()
-        client.close()
         runtime = runtime_fixture()
+        polling, check_disconnect = threading.Event(), threading.Event()
+
+        def poll(timeout):
+            polling.set()
+            self.assertTrue(check_disconnect.wait(5))
+            return False
+
+        # Release the worker's poll only when the preflight reaches the lock.
+        lock = runtime.lock
+        def enter_preflight():
+            check_disconnect.set()
+            return lock.__enter__()
+
+        runtime.lock = mock.MagicMock(wraps=lock)
+        runtime.lock.__enter__.side_effect = enter_preflight
+        runtime.lock.__exit__.side_effect = lock.__exit__
         process = runtime.process
         restarted_process = FakeProcess()
         ready = {'ready': True, 'device_name': 'fixture', 'load_seconds': 0.1}
@@ -213,12 +229,19 @@ class RuntimeLifecycleTests(unittest.TestCase):
             Process=mock.Mock(return_value=restarted_process))
         with mock.patch.object(npu, 'inventory', return_value=runtime.snapshot), \
              mock.patch.object(npu, 'verify_model'), \
+             mock.patch.object(runtime.connection, 'poll', side_effect=poll), \
              mock.patch.object(npu.multiprocessing, 'get_context', return_value=context), \
-             contextlib.redirect_stdout(io.StringIO()):
+             contextlib.redirect_stdout(io.StringIO()), ThreadPoolExecutor(max_workers=1) as pool:
+            active = pool.submit(runtime.generate, request(), server)
+            try:
+                self.assertTrue(polling.wait(5))
+                client.close()
+                self.assertEqual(runtime.health(), {'profile': runtime.profile, 'device': 'NPU'})
+                self.assertTrue(process.terminated)
+            finally:
+                check_disconnect.set()
             with self.assertRaisesRegex(ValueError, 'cancelled'):
-                runtime.generate(request(), server)
-            self.assertTrue(runtime.recoverable_after_cancel)
-            self.assertEqual(runtime.health(), {'profile': runtime.profile, 'device': 'NPU'})
+                active.result(timeout=5)
             restarted_connection.responses.append({'content': CONTENT, 'prompt_tokens': 10, 'max_new_tokens': 512, 'seconds': .01})
             result = runtime.generate(request(), server)
         context.Process.assert_called_once_with(target=npu.worker, args=(child, runtime.model, runtime.manifest, runtime.cache), daemon=True)

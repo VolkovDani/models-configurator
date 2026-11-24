@@ -409,15 +409,12 @@ class Runtime:
         return dict(self._health_locked(call_id), loaded=True)
 
     def health(self, call_id=None):
-        if self.recoverable_after_cancel:
-            with self.lock:
-                if self.recoverable_after_cancel:
-                    lifecycle_event('worker_recovery_started', profile=self.profile, stage='NPU_STARTUP', call_id=call_id)
-                    # Recreate the process only for an observed client disconnect. Timeouts,
-                    # crashes, and artifact drift still require an operator restart.
-                    self._start_worker(call_id=call_id, recovery=True)
-                return self._health_locked(call_id)
-        return self._health_locked(call_id)
+        # The previous generation may still be polling for a client disconnect.
+        with self.lock:
+            if self.recoverable_after_cancel:
+                lifecycle_event('worker_recovery_started', profile=self.profile, stage='NPU_STARTUP', call_id=call_id)
+                self._start_worker(call_id=call_id, recovery=True)
+            return self._health_locked(call_id)
 
     def generate(self, request, client, timeout=110, call_id=None):
         validate_request(request, self.profile)

@@ -4,13 +4,43 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/VolkovDani/models-configurator/internal/manager"
 )
 
+func TestParallelRequestLimit(t *testing.T) {
+	const key = "MODELS_MAX_PARALLEL_REQUESTS"
+	t.Setenv(key, "")
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := parallelRequestLimit(); got != 1 || err != nil {
+		t.Fatalf("unset limit = %d, %v; want 1", got, err)
+	}
+	t.Setenv(key, "3")
+	if got, err := parallelRequestLimit(); got != 3 || err != nil {
+		t.Fatalf("configured limit = %d, %v; want 3", got, err)
+	}
+}
+
+func TestServiceRejectsInvalidParallelRequestLimit(t *testing.T) {
+	const key = "MODELS_MAX_PARALLEL_REQUESTS"
+	for _, value := range []string{"", "0", "-1", "1.5", "many", "9999999999999999999999999"} {
+		t.Run("value="+value, func(t *testing.T) {
+			t.Setenv(key, value)
+			_, err := service(manager.Config{Models: []manager.Model{}})
+			if err == nil || !strings.Contains(err.Error(), key) {
+				t.Fatalf("service error = %v; want an error naming %s", err, key)
+			}
+		})
+	}
+}
+
 func TestServiceRoutes(t *testing.T) {
+	t.Setenv("MODELS_MAX_PARALLEL_REQUESTS", "1")
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/models" {
 			t.Errorf("unexpected metadata request %s", r.URL.Path)

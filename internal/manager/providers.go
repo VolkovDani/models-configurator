@@ -15,6 +15,7 @@ type provider struct {
 }
 
 type upstream struct {
+	socket    string
 	npuCallID string
 	base      string
 	key       string

@@ -16,8 +16,6 @@ import (
 
 const NPUProvider = "openvino-npu"
 
-var errNPUOptions = errors.New("OpenVINO NPU requires strict JSON schema output and uses fixed sampling")
-
 const npuCallHeader = "X-NPU-Call-ID"
 
 func newNPUCallID() string {
@@ -72,6 +70,19 @@ func npuUpstream(base string) (upstream, error) {
 	if err != nil {
 		return upstream{}, err
 	}
+	return unixSocketUpstream(path), nil
+}
+
+// Resolve filesystem aliases when handling a call: the runtime socket may
+// appear after manager startup. Both admission and dialing use this path.
+func (u upstream) resolveSocket() upstream {
+	if path, err := filepath.EvalSymlinks(u.socket); err == nil && path != u.socket {
+		return unixSocketUpstream(path)
+	}
+	return u
+}
+
+func unixSocketUpstream(path string) upstream {
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", path)
@@ -81,7 +92,7 @@ func npuUpstream(base string) (upstream, error) {
 	}
 	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	// HTTP framing is local to the socket selected by DialContext.
-	return upstream{base: "http://localhost", client: client}, nil
+	return upstream{base: "http://localhost", socket: path, client: client}
 }
 
 type npuBinding struct {
@@ -119,9 +130,6 @@ func NPUStatus(ctx context.Context, base string) (profile string, loaded bool, e
 }
 
 func (p provider) npuChat(ctx context.Context, in chatRequestBody) (any, error) {
-	if in.ResponseFormat == nil || in.TopP != nil || in.Temperature != nil {
-		return nil, errNPUOptions
-	}
 	digest := strings.TrimPrefix(p.model.Digest, "sha256:")
 	var health npuBinding
 	if err := p.requestBounded(ctx, http.MethodGet, "/health", nil, &health, 4096); err != nil {
