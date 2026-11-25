@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/VolkovDani/models-configurator/internal/apidocs"
 	"github.com/VolkovDani/models-configurator/internal/manager"
 	"github.com/VolkovDani/models-configurator/internal/status"
 )
@@ -61,6 +62,7 @@ func service(cfg manager.Config) (http.Handler, error) {
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/v1/", api)
+	apidocs.Register(mux)
 	mux.Handle("/", status.New(cfg))
 	return localAccess(mux), nil
 }
