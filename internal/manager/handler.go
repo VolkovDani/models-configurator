@@ -98,6 +98,25 @@ func NewWithConcurrency(cfg Config, maxParallel int) (http.Handler, error) {
 		}
 		queue.run(w, r, p, func(ctx context.Context) (any, error) { return p.embed(ctx, in) })
 	})
+	mux.HandleFunc("POST /v1/decisions", func(w http.ResponseWriter, r *http.Request) {
+		var in decisionRequest
+		if !readInput(w, r, &in) {
+			return
+		}
+		if !in.valid() {
+			fail(w, http.StatusBadRequest, "invalid decision request")
+			return
+		}
+		p, ok := lookupProvider(w, models, in.Model, "decision")
+		if !ok {
+			return
+		}
+		if strings.TrimPrefix(p.model.Digest, "sha256:") != in.Digest {
+			fail(w, http.StatusBadRequest, "decision digest does not match configured model")
+			return
+		}
+		queue.run(w, r, p, func(ctx context.Context) (any, error) { return p.decide(ctx, in) })
+	})
 	mux.HandleFunc("POST /v1/bge-m3/encode", func(w http.ResponseWriter, r *http.Request) {
 		var in bgeRequest
 		if !readInput(w, r, &in) {
