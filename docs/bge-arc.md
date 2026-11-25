@@ -52,3 +52,58 @@ Use the full model ID from the inventory. The existing `POST /v1/embeddings` end
 ```
 
 The response carries the manager model ID and one data row per input. Sparse output maps vocabulary IDs to positive weights. ColBERT output contains vectors per token. Changing Project Creator's embedding profile schedules reindexing. Its current search uses dense vectors.
+
+## Intel Arc benchmark
+
+The 2026-11-25 run used Models Configurator revision
+`4c38a401b912071e43d2ab4ba2b5f5cebebc1b7e` on an Intel Lunar Lake integrated
+GPU (PCI ID `8086:64a0`, `xe` driver, Linux `7.0.0-44-generic`). OpenVINO
+2026.4.1 reported `GPU.0` and profile
+`8355863b970396ca34421df3f082485ced9d2f842d92e8dd230d2df7c2bc1d53`.
+The Vulkan route in Ollama 0.40.16 loaded the F16 model `bge-m3:567m` with
+digest `7907646426070047a77226ac3e684fbbe8410524f7b4a74d02837e43f2146bab`
+and reported GPU memory use.
+
+| Measurement | OpenVINO | Ollama |
+| --- | ---: | ---: |
+| Container start to first dense result, median (range) | 3.11 s (3.03–3.21 s) | 2.50 s (2.41–2.65 s) |
+| Warm dense, 1 text, p50 / p95 | 12.50 / 14.35 ms | 43.40 / 45.39 ms |
+| Warm dense, 8 texts, p50 / p95 | 102.23 / 140.72 ms | 330.14 / 343.29 ms |
+| Warm dense throughput, 8 texts per request | 73.12 texts/s | 22.92 texts/s |
+| Warm Dense + Sparse + ColBERT, 1 text, p50 / p95 | 18.42 / 23.44 ms | Unsupported |
+| Peak container anonymous memory | 617 MiB | 296 MiB |
+| Peak container working set | 992 MiB | 361 MiB |
+| Peak allocation attributed to Xe DRM clients | 1,133 MiB | 1,265 MiB |
+
+Each cold measurement started a fresh container without clearing the host file
+cache. The warm workloads used one warm-up and 20 sequential requests to the
+worker's Unix socket or Ollama's loopback HTTP endpoint. Batch 1 used the first
+text below and batch 8 used all eight in order. The rich request used the same
+single text. Memory values are peaks across the three runs sampled every 100 ms.
+The working set excludes inactive file cache. The integrated GPU shares system
+memory. The container and DRM figures overlap, and DRM allocations are distinct
+from Ollama's own memory estimate.
+
+1. Администратор может изменить лимит платежа.
+2. Оператор не может изменить лимит платежа.
+3. Система сохраняет журнал операций в течение 30 дней.
+4. Система удаляет журнал операций через 90 дней.
+5. Заказ можно оплатить банковской картой.
+6. Возврат средств доступен после отмены заказа.
+7. Сервис возвращает ошибку E104 при повторной отправке.
+8. Уведомление отправляется только после подтверждения.
+
+A separate check through the running manager compared three short Russian texts
+against FlagEmbedding 1.2.11 on CPU FP32 with the original BAAI revision
+`5617a9f61b028005a4858fdac845db406aefb181`. The minimum dense cosine similarity
+was 0.9999978. The sparse token IDs matched and the largest absolute weight
+difference was 0.0005451. The minimum per-token ColBERT cosine was 0.9999882.
+The fixed texts were the first text above, the same sentence followed by
+“дважды” before the final period, and “Вернуть ошибку E104 при повторной отправке.”
+
+For a long-running service on this Arc GPU, OpenVINO is the faster tested route
+for dense embeddings and also provides both projection heads. Ollama reached its
+first result sooner and used less anonymous container memory. The benchmark
+covers short texts and a single machine. Retrieval quality and the cost of
+ranking candidates with the extra representations are tracked in Project
+Creator. [Runtime evaluation](https://github.com/VolkovDani/models-configurator/issues/9) · [Retrieval evaluation](https://github.com/VolkovDani/project-creator/issues/64)
