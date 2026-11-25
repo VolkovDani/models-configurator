@@ -3,6 +3,7 @@ package status
 import (
 	"context"
 	"fmt"
+	"github.com/VolkovDani/models-configurator/internal/manager"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -166,5 +167,29 @@ func TestBGEStatusMetadataOnly(t *testing.T) {
 		if words["openvino-bge"] == "" {
 			t.Error("missing label", lang)
 		}
+	}
+}
+
+func TestDecisionStatusUsesOllamaMetadata(t *testing.T) {
+	pin := strings.Repeat("d", 64)
+	var calls int
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Method != http.MethodGet || r.URL.Path != "/api/tags" && r.URL.Path != "/api/ps" {
+			t.Errorf("unexpected status request %s %s", r.Method, r.URL.Path)
+		}
+		fmt.Fprintf(w, `{"models":[{"name":"decision:v1","digest":%q}]}`, pin)
+	}))
+	defer up.Close()
+	h := New(manager.Config{Models: []manager.Model{{Name: "local", Model: "decision:v1", Role: "decision", Provider: "ollama", BaseURL: up.URL, Digest: pin}}})
+	for lang, words := range translations {
+		if words["decision"] == "" {
+			t.Errorf("missing role label for %s", lang)
+		}
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/status", nil))
+	if w.Code != 200 || calls != 2 || !strings.Contains(w.Body.String(), `"installed":true,"loaded":true`) {
+		t.Fatalf("got %d %s, %d upstream calls", w.Code, w.Body, calls)
 	}
 }

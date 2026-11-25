@@ -101,8 +101,11 @@ func (cfg Config) validate() error {
 }
 
 func (m Model) validate() error {
-	if !namePattern.MatchString(m.Name) || !modelPattern.MatchString(m.Model) || (m.Role != "chat" && m.Role != "embeddings") {
+	if !namePattern.MatchString(m.Name) || !modelPattern.MatchString(m.Model) || (m.Role != "chat" && m.Role != "embeddings" && m.Role != "decision") {
 		return errors.New("invalid model name, upstream model or role")
+	}
+	if m.Role == "decision" && m.Provider != "ollama" {
+		return errors.New("decision profiles require local Ollama")
 	}
 	if m.Provider == BGEProvider {
 		if _, err := socketPath(m.BaseURL); err != nil {

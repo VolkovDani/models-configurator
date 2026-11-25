@@ -29,6 +29,26 @@ class DeploymentTest(unittest.TestCase):
         self.assertEqual(provider["environment"]["OLLAMA_NO_CLOUD"], "1")
         self.assertIn("runtime", config["services"]["models-configurator"]["networks"])
 
+    def test_optional_arc_provider_stays_on_the_private_runtime_network(self):
+        env = {**os.environ, 'MODELS_OLLAMA_DRI_DEVICE': '/dev/dri/renderD129',
+               'MODELS_OLLAMA_RENDER_GID': '4321'}
+        config = self.compose('-f', 'compose.yml', '-f', 'compose.ollama-arc.yml',
+                              '--profile', 'arc', env=env)
+        services = config['services']
+        ollama = services['ollama']
+        self.assertEqual(set(ollama['networks']), {'runtime'})
+        self.assertEqual(ollama['profiles'], ['arc'])
+        self.assertFalse(ollama.get('ports'))
+        self.assertEqual(ollama['environment']['OLLAMA_NO_CLOUD'], '1')
+        self.assertEqual(ollama['environment']['OLLAMA_VULKAN'], '1')
+        self.assertEqual(ollama['environment']['GGML_VK_VISIBLE_DEVICES'], '0')
+        self.assertEqual(ollama['environment']['OLLAMA_NUM_PARALLEL'], '1')
+        self.assertEqual(ollama['group_add'], ['4321'])
+        self.assertEqual(ollama['devices'], [{'source': '/dev/dri/renderD129',
+                                              'target': '/dev/dri/renderD129', 'permissions': 'rw'}])
+        self.assertEqual(ollama['volumes'][0]['source'], 'ollama_data')
+        self.assertFalse(services['models-configurator'].get('devices'))
+
     def test_manager_parallel_request_limit_from_env_file(self):
         key = "MODELS_MAX_PARALLEL_REQUESTS"
         env = os.environ.copy()

@@ -59,9 +59,11 @@ curl -sS http://127.0.0.1:8317/v1/embeddings -H 'Content-Type: application/json'
   -d '{"model":"<embedding-profile-id>","input":["hello"],"encoding_format":"float"}'
 ```
 
+[Run local decision models](docs/decision-models.md) with System One D3 or Laya.
+
 ## Concurrent requests
 
-The manager runs one inference request at a time by default. Chat and embedding requests share the limit. To allow two independent runtimes to work at once, set the following in the manager's private `.env` and apply it with `docker compose up -d models-configurator`. For a native launch, export the variable before starting the server.
+The manager runs one inference request at a time by default. Chat, embedding and decision requests share the limit. To allow two independent runtimes to work at once, set the following in the manager's private `.env` and apply it with `docker compose up -d models-configurator`. For a native launch, export the variable before starting the server.
 
 ```dotenv
 MODELS_MAX_PARALLEL_REQUESTS=2
@@ -71,7 +73,7 @@ Choose a positive integer that your hardware and providers can sustain. Each Ope
 
 ## Intel NPU
 
-Run the OpenVINO worker in Docker or on the host and select its pinned generation profile from any trusted manager client. An existing Project Creator export can be mounted read-only. A fresh installation can fetch the pinned Qwen snapshot from Hugging Face and export it offline. GPU deployment profiles and specialized classifier protocols remain separate migration tasks. [NPU setup](docs/npu.md) · [Prepare a model](docs/npu-model.md)
+Run the OpenVINO worker in Docker or on the host and select its pinned generation profile from any trusted manager client. An existing Project Creator export can be mounted read-only. A fresh installation can fetch the pinned Qwen snapshot from Hugging Face and export it offline. [NPU setup](docs/npu.md) · [Prepare a model](docs/npu-model.md)
 
 [Run BGE-M3 on Intel Arc](docs/bge-arc.md) for dense embeddings and optional sparse and ColBERT representations.
 
