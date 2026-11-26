@@ -85,7 +85,7 @@ func TestHistoryChartMarkup(t *testing.T) {
 	for _, fragment := range []string{
 		`data-model-id="bge.profile.rev"`,
 		`data-model-name="bge"`,
-		`data-chart-profile="Профиль модели"`,
+		`data-chart-usage="Тип использования"`,
 		`data-operation="bge_encode"`,
 		`data-duration-ms="403"`,
 		`data-endpoint="POST /v1/chat/completions"`,

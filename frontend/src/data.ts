@@ -12,40 +12,64 @@ export type Operation = {
   operation: string;
   label: string;
   endpoint: string;
-  points: Point[];
+  series: ProfileSeries[];
 };
 
-export type Profile = { id: string; name: string; operations: Operation[] };
+type ProfileSeries = { id: string; name: string; points: Point[] };
 
-export function groupCalls(calls: ReadonlyArray<Call>): Profile[] {
-  const models = new Map<string, { name: string; operations: Map<string, Operation> }>();
+export function groupCalls(calls: ReadonlyArray<Call>): Operation[] {
+  const operations = new Map<
+    string,
+    Omit<Operation, 'series'> & { profiles: Map<string, ProfileSeries> }
+  >();
   for (const { modelId, profile, operation, label, endpoint, started, duration } of calls) {
-    let model = models.get(modelId);
-    if (!model) {
-      model = { name: profile, operations: new Map() };
-      models.set(modelId, model);
+    let group = operations.get(operation);
+    if (!group) {
+      group = { operation, label, endpoint, profiles: new Map() };
+      operations.set(operation, group);
     }
-    let series = model.operations.get(operation);
+    let series = group.profiles.get(modelId);
     if (!series) {
-      series = { operation, label, endpoint, points: [] };
-      model.operations.set(operation, series);
+      series = { id: modelId, name: profile, points: [] };
+      group.profiles.set(modelId, series);
     }
     series.points.push({ started, duration });
   }
-  return Array.from(models, ([id, model]) => ({
-    id,
-    name: model.name,
-    operations: Array.from(model.operations.values(), (series) => ({
-      ...series,
-      points: series.points.sort((a, b) => a.started - b.started),
-    })),
-  }));
+  return Array.from(operations.values(), ({ profiles, ...operation }) => {
+    const idsByName = new Map<string, string[]>();
+    for (const { id, name } of profiles.values()) {
+      const ids = idsByName.get(name);
+      if (ids) ids.push(id);
+      else idsByName.set(name, [id]);
+    }
+    return {
+      ...operation,
+      series: Array.from(profiles.values(), (series) => ({
+        ...series,
+        name: profileName(series, idsByName.get(series.name) ?? []),
+        points: series.points.sort((a, b) => a.started - b.started),
+      })),
+    };
+  });
 }
 
-export function timeDomain(operations: ReadonlyArray<Pick<Operation, 'points'>>): [number, number] {
+function profileName({ id, name }: ProfileSeries, matchingIds: string[]) {
+  if (matchingIds.length <= 1) return name;
+
+  let length = 8;
+  while (
+    length < id.length &&
+    matchingIds.some((otherId) => otherId !== id && otherId.endsWith(id.slice(-length)))
+  ) {
+    length += 1;
+  }
+  return `${name} · ${id.slice(-length)}`;
+}
+
+export function timeDomain(series: ReadonlyArray<Pick<ProfileSeries, 'points'>>): [number, number] {
   let min = Infinity;
   let max = -Infinity;
-  for (const { points } of operations) {
+  for (const { points } of series) {
     for (const { started } of points) {
       min = Math.min(min, started);
       max = Math.max(max, started);

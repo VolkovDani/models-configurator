@@ -5,7 +5,7 @@ import "net/http"
 var translations = map[string]map[string]string{
 	"en": {
 		"empty":         "No models configured. Add a profile to the configuration file and restart Models Configurator.",
-		"history_title": "Model call history", "history_chart_title": "Call durations", "history_latest": "Latest calls", "history_time": "Started (UTC)", "history_profile": "Model profile",
+		"history_title": "Model call history", "history_chart_title": "Call durations", "history_usage_type": "Usage type", "history_latest": "Latest calls", "history_time": "Started (UTC)", "history_profile": "Model profile",
 		"history_operation": "Operation", "history_outcome": "Result", "history_duration": "Duration", "history_ms": "ms",
 		"history_empty": "No model calls recorded yet.", "history_end": "No older calls.", "history_more": "Load more",
 		"history_load_error": "Could not load older calls. Try again.", "history_loaded": "Older calls loaded.", "history_cursor_error": "Invalid history cursor.",
@@ -20,7 +20,7 @@ var translations = map[string]map[string]string{
 	},
 	"ru": {
 		"empty":         "Модели не настроены. Добавьте профиль в файл конфигурации и перезапустите Models Configurator.",
-		"history_title": "История вызовов", "history_chart_title": "Длительность вызовов", "history_latest": "Последние вызовы", "history_time": "Начало (UTC)", "history_profile": "Профиль модели",
+		"history_title": "История вызовов", "history_chart_title": "Длительность вызовов", "history_usage_type": "Тип использования", "history_latest": "Последние вызовы", "history_time": "Начало (UTC)", "history_profile": "Профиль модели",
 		"history_operation": "Операция", "history_outcome": "Результат", "history_duration": "Длительность", "history_ms": "мс",
 		"history_empty": "Вызовов моделей пока нет.", "history_end": "Более ранних вызовов нет.", "history_more": "Загрузить ещё",
 		"history_load_error": "Не удалось загрузить вызовы. Попробуйте ещё раз.", "history_loaded": "Более ранние вызовы загружены.", "history_cursor_error": "Некорректный курсор истории.",
