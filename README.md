@@ -43,6 +43,8 @@ For an authenticated upstream, set the named variable in a private `providers.en
 
 ## Connect clients
 
+Open [Swagger UI](http://127.0.0.1:8317/docs/) from the status panel or directly to browse endpoint schemas, review examples and try requests. Download [OpenAPI JSON](http://127.0.0.1:8317/openapi.json) to import the contract into a client tool. The service includes the UI assets and works offline.
+
 Read an immutable profile ID from `GET /v1/models` and send it in the request's `model` field. Local clients use `http://127.0.0.1:8317/v1`. Containers can join the `models-configurator-clients` network and use `http://models-configurator:8317/v1`. Only attach trusted applications: clients on this network can use all configured profiles, including billable external ones. For Project Creator select the openai-compatible runtime for each active role, paste its profile ID, and set `PROJECT_CREATOR_MODELS_NETWORK=models-configurator-clients` in its private configuration.
 
 | Endpoint | Purpose |

@@ -26,6 +26,7 @@ details code{display:block;margin-top:.6rem}
 </head>
 <body>
 <header><strong>Models Configurator</strong>
+<a href="/docs/">{{.Label "api_docs"}}</a>
 <nav aria-label="{{.Label "languages"}}"><a href="/?lang=en" lang="en" {{if eq .Lang "en"}}aria-current="page"{{end}}>English</a><a href="/?lang=ru" lang="ru" {{if eq .Lang "ru"}}aria-current="page"{{end}}>Русский</a></nav></header>
 <main><h1>{{.Label "title"}}</h1>
 <div class="toolbar"><span>{{.Label "checked"}} · <time datetime="{{.Timestamp}}">{{.Timestamp}}</time></span><nav><a href="/history?lang={{.Lang}}">{{.Label "history_title"}}</a><a href="/?lang={{.Lang}}">{{.Label "refresh"}}</a></nav></div>
