@@ -722,7 +722,7 @@
               "code": {
                 "type": "string",
                 "description": "Machine-readable code for OpenVINO NPU failures.",
-                "enum": ["PROFILE_CHANGED", "NPU_UNAVAILABLE", "NPU_WORKER_EXIT", "NPU_RECOVERY_FAILED", "TIMEOUT", "INVALID_OUTPUT"]
+                "enum": ["PROFILE_CHANGED", "NPU_UNAVAILABLE", "NPU_WORKER_EXIT", "NPU_RECOVERY_FAILED", "TIMEOUT", "INVALID_OUTPUT", "OUTPUT_TOKEN_LIMIT"]
               }
             }
           }
@@ -755,7 +755,7 @@
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "ProviderFailure": {
-        "description": "The provider call failed or returned invalid output. OpenVINO NPU can return error code INVALID_OUTPUT.",
+        "description": "The provider call failed or returned invalid output. OpenVINO NPU returns OUTPUT_TOKEN_LIMIT when generation reaches the effective completion token cap, or INVALID_OUTPUT for other rejected output.",
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "DeadlineExceeded": {

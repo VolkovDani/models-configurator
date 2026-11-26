@@ -249,12 +249,22 @@ func TestRuntimeFailureDiagnostics(t *testing.T) {
 		{"NPU_RECOVERY_FAILED", 503, "NPU_RECOVERY_FAILED"},
 		{"TIMEOUT", 504, "TIMEOUT"},
 		{"INVALID_OUTPUT", 502, "INVALID_OUTPUT"},
+		{"OUTPUT_TOKEN_LIMIT", 502, "OUTPUT_TOKEN_LIMIT"},
+		{"OUTPUT_TOKEN_LIMIT", 503, ""},
+		{"OUTPUT_TOKEN_LIMIT_PRIVATE", 502, ""},
 		{"PRIVATE", 503, ""},
 		{"TIMEOUT", 409, ""},
 		{strings.Repeat("PRIVATE", 1024), 503, ""},
 	}
 	for _, tc := range cases {
 		m := npuModel(socketRuntime(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet && r.URL.Path == "/health" {
+				fmt.Fprintf(w, `{"profile":%q,"device":"NPU"}`, strings.Repeat("a", 64))
+				return
+			}
+			if r.Method != http.MethodPost || r.URL.Path != "/v1/generate" {
+				t.Errorf("unexpected runtime request %s %s", r.Method, r.URL.Path)
+			}
 			w.WriteHeader(tc.status)
 			fmt.Fprintf(w, `{"error":"PRIVATE internal text","code":%q}`, tc.code)
 		}))
