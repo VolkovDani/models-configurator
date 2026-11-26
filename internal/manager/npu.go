@@ -37,7 +37,7 @@ func (e npuFailure) status() int {
 		return http.StatusServiceUnavailable
 	case "TIMEOUT":
 		return http.StatusGatewayTimeout
-	case "INVALID_OUTPUT":
+	case "INVALID_OUTPUT", "OUTPUT_TOKEN_LIMIT":
 		return http.StatusBadGateway
 	}
 	return 0

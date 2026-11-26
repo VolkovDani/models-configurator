@@ -95,7 +95,7 @@ class DiagnosticsTests(unittest.TestCase):
 
     def test_typed_runtime_errors_have_stable_safe_codes(self):
         for code in ('NPU_UNAVAILABLE', 'NPU_RECOVERY_FAILED', 'NPU_WORKER_EXIT',
-                     'TIMEOUT', 'INVALID_OUTPUT', 'PROFILE_CHANGED'):
+                     'TIMEOUT', 'INVALID_OUTPUT', 'OUTPUT_TOKEN_LIMIT', 'PROFILE_CHANGED'):
             with self.subTest(code=code):
                 error = npu.RuntimeFailure(code, 'private source text')
                 self.assertEqual(error.code, code)
@@ -520,7 +520,8 @@ class WorkerTests(unittest.TestCase):
                 with mock.patch.object(npu, 'inventory', return_value=runtime.snapshot), \
                      mock.patch.object(npu, 'lifecycle_event'), self.assertRaises(npu.RuntimeFailure) as rejected:
                     runtime.generate(request(), None)
-                self.assertEqual(rejected.exception.code, 'INVALID_OUTPUT')
+                self.assertEqual(rejected.exception.code,
+                                 stage if stage == 'OUTPUT_TOKEN_LIMIT' else 'INVALID_OUTPUT')
 
     def test_per_request_completion_limit_controls_generation_and_truncation(self):
         payload = dict(request(), max_completion_tokens=1024)
@@ -575,7 +576,7 @@ class WorkerTests(unittest.TestCase):
 
 
 class HTTPTests(unittest.TestCase):
-    def server(self, unix=False):
+    def server(self, unix=False, runtime=None):
         class FixtureRuntime:
             profile = 'a'*64
             received_call_id = None
@@ -617,7 +618,7 @@ class HTTPTests(unittest.TestCase):
         else:
             server = HTTPServer(('127.0.0.1', 0), npu.Handler)
             connection = http.client.HTTPConnection(*server.server_address, timeout=2)
-        server.runtime = FixtureRuntime()
+        server.runtime = runtime if runtime is not None else FixtureRuntime()
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         def close():
@@ -667,6 +668,19 @@ class HTTPTests(unittest.TestCase):
                 response = connection.getresponse()
                 self.assertEqual(response.status, status)
                 self.assertIn('error', json.loads(response.read()))
+
+    def test_unix_socket_forwards_only_exact_output_token_limit(self):
+        stages = ('OUTPUT_TOKEN_LIMIT', 'OUTPUT_TOKEN_LIMIT_PRIVATE', 'OUTPUT_JSON')
+        runtime = runtime_fixture({'error': stage, 'content': 'private partial output'} for stage in stages)
+        connection = self.server(unix=True, runtime=runtime)
+        with mock.patch.object(npu, 'inventory', return_value=runtime.snapshot), \
+             mock.patch.object(npu, 'lifecycle_event'):
+            for stage, code in zip(stages, ('OUTPUT_TOKEN_LIMIT', 'INVALID_OUTPUT', 'INVALID_OUTPUT')):
+                with self.subTest(stage=stage):
+                    connection.request('POST', '/v1/generate', body=json.dumps(request()))
+                    response = connection.getresponse()
+                    self.assertEqual(response.status, 502)
+                    self.assertEqual(json.loads(response.read()), {'code': code, 'error': 'NPU generation failed'})
 
     def test_sigterm_closes_and_unlinks_socket_for_next_start(self):
         with tempfile.TemporaryDirectory() as directory:

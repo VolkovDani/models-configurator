@@ -34,6 +34,7 @@ RUNTIME_ERROR_MESSAGES = {
     'NPU_WORKER_EXIT': 'NPU worker exited; explicit restart required',
     'TIMEOUT': 'NPU request timed out; restart runtime before retry',
     'INVALID_OUTPUT': 'NPU output rejected',
+    'OUTPUT_TOKEN_LIMIT': 'NPU output reached the completion token limit',
     'PROFILE_CHANGED': 'NPU model changed or profile differs; explicit restart required',
 }
 _LIFECYCLE_LOCK = threading.Lock()
@@ -464,9 +465,12 @@ class Runtime:
             response = self.connection.recv()
             binding = self._health_locked(call_id)
             if 'error' in response:
+                worker_error = response['error']
                 lifecycle_event(f'{operation}_failed', profile=self.profile,
-                                stage=response.get('error', stage), call_id=call_id)
-                code = 'INVALID_OUTPUT' if str(response.get('error', '')).startswith('OUTPUT_') else 'NPU_UNAVAILABLE'
+                                stage=worker_error, call_id=call_id)
+                if worker_error == 'OUTPUT_TOKEN_LIMIT':
+                    raise RuntimeFailure('OUTPUT_TOKEN_LIMIT')
+                code = 'INVALID_OUTPUT' if str(worker_error).startswith('OUTPUT_') else 'NPU_UNAVAILABLE'
                 raise RuntimeFailure(code)
             if operation == 'token_count':
                 return dict(binding, input_tokens=response['input_tokens'],
@@ -525,7 +529,8 @@ class Handler(BaseHTTPRequestHandler):
 
     @staticmethod
     def failure_status(error):
-        return {'TIMEOUT': 504, 'INVALID_OUTPUT': 502, 'PROFILE_CHANGED': 409}.get(error.code, 503)
+        return {'TIMEOUT': 504, 'INVALID_OUTPUT': 502, 'OUTPUT_TOKEN_LIMIT': 502,
+                'PROFILE_CHANGED': 409}.get(error.code, 503)
 
     def do_GET(self):
         try:
