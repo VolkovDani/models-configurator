@@ -154,7 +154,7 @@ func (p provider) chat(ctx context.Context, in chatRequestBody) (any, error) {
 	if err := p.verify(ctx); err != nil {
 		return nil, err
 	}
-	options := map[string]any{"num_ctx": 32768, "temperature": 0, "num_predict": 1024}
+	options := p.model.OllamaChat.options()
 	if in.Temperature != nil {
 		options["temperature"] = *in.Temperature
 	}
