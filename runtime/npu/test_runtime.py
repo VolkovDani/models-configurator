@@ -96,9 +96,7 @@ class ContractTests(unittest.TestCase):
         tokenizer = Mock()
         encoded = SimpleNamespace(input_ids=SimpleNamespace(shape=(1, 101)))
         tokenizer.encode.return_value = encoded
-        with self.assertRaises(ValueError):
-            npu.format_prompt(tokenizer, payload, 100)
-        self.assertEqual(npu.format_prompt(tokenizer, payload, 101), (encoded, 101))
+        self.assertEqual(npu.format_prompt(tokenizer, payload), (encoded, 101))
         history = tokenizer.apply_chat_template.call_args.args[0]
         self.assertEqual(history[1:], payload['messages'][1:])
         self.assertEqual(history[0]['content'], 'Use the supplied units.\nReturn one JSON object '
@@ -107,7 +105,7 @@ class ContractTests(unittest.TestCase):
         tokenizer.encode.assert_called_with(tokenizer.apply_chat_template.return_value,
                                              add_special_tokens=False, truncation=False)
         del payload['messages'][0]
-        npu.format_prompt(tokenizer, payload, 101)
+        npu.format_prompt(tokenizer, payload)
         history = tokenizer.apply_chat_template.call_args.args[0]
         self.assertEqual(history[0]['role'], 'system')
         self.assertEqual(history[1:], payload['messages'])

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in, offline NPU-only structured generation service. Standard library except worker."""
+"""Opt-in, offline NPU-only generation and token counting. Standard library except worker."""
 import argparse
 import hashlib
 import importlib.metadata
@@ -188,7 +188,7 @@ def validate_content(text):
         raise OutputRejected('OUTPUT_JSON') from None
 
 
-def format_prompt(tokenizer, request, limit):
+def format_prompt(tokenizer, request):
     history = list(request['messages'])
     schema = request['schema']
     kind = 'object' if schema.get('type') == 'object' else 'value'
@@ -200,10 +200,7 @@ def format_prompt(tokenizer, request, limit):
         history.insert(0, {'role': 'system', 'content': instruction})
     prompt = tokenizer.apply_chat_template(history, add_generation_prompt=True)
     encoded = tokenizer.encode(prompt, add_special_tokens=False, truncation=False)
-    count = int(encoded.input_ids.shape[-1])
-    if count > limit:
-        raise ValueError('complete prompt exceeds explicit NPU token limit; nothing was truncated')
-    return encoded, count
+    return encoded, int(encoded.input_ids.shape[-1])
 
 
 def worker(connection, model, manifest, cache):
@@ -232,17 +229,24 @@ def worker(connection, model, manifest, cache):
         connection.send({'ready': True, 'load_seconds': time.monotonic()-started})
         while True:
             try:
-                request = connection.recv()
+                operation, request = connection.recv()
             except EOFError:
                 return
             diagnostics = {}
             try:
                 stage = 'PROMPT_LIMIT_OR_TEMPLATE'
-                encoded, tokens = format_prompt(tokenizer, request, manifest['max_prompt_tokens'])
+                encoded, tokens = format_prompt(tokenizer, request)
+                prompt_limit = manifest['max_prompt_tokens']
+                completion_limit = manifest['max_new_tokens']
+                limit = min(completion_limit, request.get('max_completion_tokens', completion_limit))
+                if operation == 'token_count':
+                    connection.send({'input_tokens': tokens, 'max_input_tokens': prompt_limit,
+                                     'max_completion_tokens': limit})
+                    continue
+                if tokens > prompt_limit:
+                    raise ValueError('complete prompt exceeds explicit NPU token limit; nothing was truncated')
                 started = time.monotonic()
                 stage = 'NPU_GENERATION'
-                limit = manifest['max_new_tokens']
-                limit = min(limit, request.get('max_completion_tokens', limit))
                 structured = genai.StructuredOutputConfig(json_schema=json.dumps(request['schema']))
                 output = pipeline.generate(encoded, max_new_tokens=limit,
                                            do_sample=False, num_beams=1, num_return_sequences=1,
@@ -417,7 +421,14 @@ class Runtime:
             return self._health_locked(call_id)
 
     def generate(self, request, client, timeout=110, call_id=None):
+        return self._run_request('generation', request, client, timeout, call_id)
+
+    def count_tokens(self, request, client, timeout=110, call_id=None):
+        return self._run_request('token_count', request, client, timeout, call_id)
+
+    def _run_request(self, operation, request, client, timeout, call_id):
         validate_request(request, self.profile)
+        stage = f'NPU_{operation.upper()}'
         if not self.lock.acquire(blocking=False):
             raise ValueError('NPU busy; retry explicitly after current request')
         try:
@@ -425,8 +436,8 @@ class Runtime:
                 lifecycle_event('worker_recovery_started', profile=self.profile, stage='NPU_STARTUP', call_id=call_id)
                 self._start_worker(call_id=call_id, recovery=True)
             self._health_locked(call_id)
-            self.connection.send(request)
-            lifecycle_event('generation_started', profile=self.profile, stage='NPU_GENERATION', call_id=call_id)
+            self.connection.send((operation, request))
+            lifecycle_event(f'{operation}_started', profile=self.profile, stage=stage, call_id=call_id)
             deadline = time.monotonic()+timeout
             while not self.connection.poll(0.1):
                 readable, _, _ = select.select([client], [], [], 0)
@@ -447,16 +458,20 @@ class Runtime:
                 worker_exited = not self.process.is_alive()
                 if timed_out or worker_exited:
                     reason = 'request_timeout' if timed_out else 'worker_exit'
-                    lifecycle_event(reason, profile=self.profile, stage='NPU_GENERATION', call_id=call_id)
+                    lifecycle_event(reason, profile=self.profile, stage=stage, call_id=call_id)
                     self._stop_worker(call_id=call_id)
                     raise RuntimeFailure('TIMEOUT' if timed_out else 'NPU_WORKER_EXIT')
             response = self.connection.recv()
-            self._health_locked(call_id)
+            binding = self._health_locked(call_id)
             if 'error' in response:
-                lifecycle_event('generation_failed', profile=self.profile,
-                                stage=response.get('error', 'NPU_GENERATION'), call_id=call_id)
+                lifecycle_event(f'{operation}_failed', profile=self.profile,
+                                stage=response.get('error', stage), call_id=call_id)
                 code = 'INVALID_OUTPUT' if str(response.get('error', '')).startswith('OUTPUT_') else 'NPU_UNAVAILABLE'
                 raise RuntimeFailure(code)
+            if operation == 'token_count':
+                return dict(binding, input_tokens=response['input_tokens'],
+                            max_input_tokens=response['max_input_tokens'],
+                            max_completion_tokens=response['max_completion_tokens'])
             try:
                 validate_content(response.get('content'))
             except OutputRejected:
@@ -466,7 +481,7 @@ class Runtime:
                               'seconds': response['seconds']}, ensure_ascii=False), flush=True)
             return dict(self._health_locked(call_id), content=response['content'])
         except (EOFError, BrokenPipeError, ConnectionResetError):
-            lifecycle_event('worker_exit', profile=self.profile, stage='NPU_GENERATION', call_id=call_id)
+            lifecycle_event('worker_exit', profile=self.profile, stage=stage, call_id=call_id)
             self._stop_worker(call_id=call_id)
             raise RuntimeFailure('NPU_WORKER_EXIT') from None
         finally:
@@ -529,9 +544,17 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(503, {'error': 'NPU health check failed'})
 
     def do_POST(self):
+        operation = 'generation'
         try:
             self.connection.settimeout(5)
-            if self.path != '/v1/generate' or self.headers.get('Transfer-Encoding'):
+            if self.path == '/v1/generate':
+                execute = self.server.runtime.generate
+            elif self.path == '/v1/count-tokens':
+                operation = 'token count'
+                execute = self.server.runtime.count_tokens
+            else:
+                raise ValueError('invalid request')
+            if self.headers.get('Transfer-Encoding'):
                 raise ValueError('invalid request')
             length = int(self.headers.get('Content-Length', '0'))
             if not 0 < length <= MAX_BODY:
@@ -540,15 +563,15 @@ class Handler(BaseHTTPRequestHandler):
             if len(data) != length:
                 raise ValueError('incomplete request')
             request = strict_json(data.decode('utf-8'))
-            self.reply(200, self.server.runtime.generate(request, self.connection, call_id=self.call_id()))
+            self.reply(200, execute(request, self.connection, call_id=self.call_id()))
         except RuntimeFailure as error:
             try:
-                self.reply(self.failure_status(error), {'error': 'NPU generation failed', 'code': error.code})
+                self.reply(self.failure_status(error), {'error': f'NPU {operation} failed', 'code': error.code})
             except OSError:
                 pass
         except (ValueError, TypeError, KeyError, OSError, EOFError, RecursionError):
             try:
-                self.reply(422, {'error': 'NPU generation rejected'})
+                self.reply(422, {'error': f'NPU {operation} rejected'})
             except OSError:
                 pass
 

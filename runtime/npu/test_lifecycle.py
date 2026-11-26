@@ -67,7 +67,7 @@ class FakePipe:
 def runtime_fixture(responses=()):
     runtime = npu.Runtime.__new__(npu.Runtime)
     runtime.model = Path('/unused-test-model')
-    runtime.manifest = {'max_new_tokens': 512}
+    runtime.manifest = {'max_prompt_tokens': 2048, 'max_new_tokens': 512}
     runtime.cache = Path('/unused-test-cache')
     runtime.startup_timeout = 600
     runtime.profile = 'a'*64
@@ -393,11 +393,28 @@ class RuntimeLifecycleTests(unittest.TestCase):
                                   stage='NPU_GENERATION', call_id=call_id)
         self.assertFalse(runtime.lock.locked())
 
+    def test_token_count_checks_pinned_artifacts_before_and_after_dispatch(self):
+        counts = {'input_tokens': 2049, 'max_input_tokens': 2048, 'max_completion_tokens': 512}
+        runtime = runtime_fixture([counts])
+        with mock.patch.object(npu, 'inventory', return_value=runtime.snapshot):
+            self.assertEqual(runtime.count_tokens(request(), None),
+                             dict(counts, profile=runtime.profile, device='NPU'))
+        self.assertEqual(runtime.connection.sent, [('token_count', request())])
+        self.assertFalse(runtime.lock.locked())
+
+        runtime = runtime_fixture([counts])
+        with mock.patch.object(npu, 'inventory', side_effect=[runtime.snapshot, {}]):
+            with self.assertRaises(npu.RuntimeFailure) as failure:
+                runtime.count_tokens(request(), None)
+        self.assertEqual(failure.exception.code, 'PROFILE_CHANGED')
+        self.assertFalse(runtime.lock.locked())
+
 
 class WorkerTests(unittest.TestCase):
     def run_worker(self, finish, *, schema_error=None, generation_error=None, text=None,
-                   requests=None, output=None, stderr=None, devices=('NPU',), versions=None):
-        encoded = SimpleNamespace(input_ids=SimpleNamespace(shape=(1, 10)))
+                   requests=None, output=None, stderr=None, devices=('NPU',), versions=None,
+                   operation='generation', input_tokens=10):
+        encoded = SimpleNamespace(input_ids=SimpleNamespace(shape=(1, input_tokens)))
         tokenizer = SimpleNamespace(
             apply_chat_template=mock.Mock(return_value='full formatted template'),
             encode=mock.Mock(return_value=encoded),
@@ -412,7 +429,8 @@ class WorkerTests(unittest.TestCase):
                                StructuredOutputConfig=mock.Mock(side_effect=schema_error),
                                GenerationFinishReason=SimpleNamespace(STOP='stop', LENGTH='length',
                                                                       NONE='none', TOOL_CALL='tool_call'))
-        connection = FakePipe([request()] if requests is None else requests)
+        values = [request()] if requests is None else requests
+        connection = FakePipe((operation, value) for value in values)
         with mock.patch.dict('sys.modules', {'openvino': ov, 'openvino_genai': genai}), \
              mock.patch.object(npu.importlib.metadata, 'version', side_effect=lambda name: (versions or npu.VERSIONS)[name]), \
              mock.patch.dict(npu.os.environ), contextlib.redirect_stderr(stderr or io.StringIO()):
@@ -442,6 +460,36 @@ class WorkerTests(unittest.TestCase):
         tokenizer.decode.assert_called_once_with([11, 12, 13])
         self.assertEqual(connection.sent[1]['content'], CONTENT)
         self.assertTrue(connection.closed)
+
+    def test_worker_count_matches_generation_template_and_completion_limit(self):
+        payload = dict(request(), max_completion_tokens=42)
+        payload['messages'].extend([{'role': 'assistant', 'content': '8 м'},
+                                    {'role': 'user', 'content': 'Конвертируй в футы.'}])
+        payload['schema'] = {'type': 'object', 'properties': {'значение': {'type': 'number'}}}
+        generation, _, generation_tokenizer, _, _ = self.run_worker('stop', requests=[payload])
+        count, pipeline, tokenizer, _, genai = self.run_worker('stop', requests=[payload],
+                                                                 operation='token_count')
+        self.assertEqual(count.sent[1], {'input_tokens': generation.sent[1]['prompt_tokens'],
+                                        'max_input_tokens': 2048,
+                                        'max_completion_tokens': generation.sent[1]['max_new_tokens']})
+        self.assertEqual(tokenizer.apply_chat_template.call_args, generation_tokenizer.apply_chat_template.call_args)
+        self.assertEqual(tokenizer.encode.call_args, generation_tokenizer.encode.call_args)
+        pipeline.generate.assert_not_called()
+        tokenizer.decode.assert_not_called()
+        genai.StructuredOutputConfig.assert_not_called()
+
+    def test_worker_reports_over_budget_count_without_truncating_or_generating(self):
+        payload = dict(request(), max_completion_tokens=1024)
+        count, pipeline, tokenizer, _, _ = self.run_worker('stop', requests=[payload],
+                                                            operation='token_count', input_tokens=2049)
+        self.assertEqual(count.sent[1], {'input_tokens': 2049, 'max_input_tokens': 2048,
+                                        'max_completion_tokens': 512})
+        tokenizer.encode.assert_called_once_with('full formatted template', add_special_tokens=False, truncation=False)
+        pipeline.generate.assert_not_called()
+        tokenizer.decode.assert_not_called()
+        generation, pipeline, _, _, _ = self.run_worker('stop', requests=[payload], input_tokens=2049)
+        self.assertEqual(generation.sent[1], {'error': 'PROMPT_LIMIT_OR_TEMPLATE'})
+        pipeline.generate.assert_not_called()
 
     def test_rejected_generation_logs_only_safe_counts_and_finish_reason(self):
         cases = [
@@ -544,6 +592,12 @@ class HTTPTests(unittest.TestCase):
                 npu.validate_request(value, self.profile)
                 return {'profile': self.profile, 'device': 'NPU', 'content': CONTENT}
 
+            def count_tokens(self, value, _client, call_id=None):
+                self.received_call_id = call_id
+                npu.validate_request(value, self.profile)
+                return {'profile': self.profile, 'device': 'NPU', 'input_tokens': 2049,
+                        'max_input_tokens': 2048, 'max_completion_tokens': value.get('max_completion_tokens', 512)}
+
         if unix:
             directory = tempfile.TemporaryDirectory(prefix='mc-npu-')
             self.addCleanup(directory.cleanup)
@@ -589,6 +643,30 @@ class HTTPTests(unittest.TestCase):
         response = connection.getresponse()
         self.assertEqual(response.status, 200)
         self.assertEqual(json.loads(response.read())['content'], CONTENT)
+
+    def test_unix_socket_token_count_contract_uses_same_bounded_request(self):
+        connection = self.server(unix=True)
+        call_id = 'a'*32
+        connection.request('POST', '/v1/count-tokens', body=json.dumps(dict(request(), max_completion_tokens=42)),
+                           headers={'X-NPU-Call-ID': call_id})
+        response = connection.getresponse()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(json.loads(response.read()),
+                         {'profile': 'a'*64, 'device': 'NPU', 'input_tokens': 2049,
+                          'max_input_tokens': 2048, 'max_completion_tokens': 42})
+        self.assertEqual(connection._npu_runtime.received_call_id, call_id)
+
+        for body, headers, status in (
+            (json.dumps(dict(request(), profile='b'*64)), {}, 409),
+            (json.dumps(dict(request(), max_completion_tokens=True)), {}, 422),
+            (json.dumps(request())[:-1]+',"schema":{}}', {}, 422),
+            ('{}', {'Content-Length': str(npu.MAX_BODY+1)}, 422),
+        ):
+            with self.subTest(status=status):
+                connection.request('POST', '/v1/count-tokens', body=body, headers=headers)
+                response = connection.getresponse()
+                self.assertEqual(response.status, status)
+                self.assertIn('error', json.loads(response.read()))
 
     def test_sigterm_closes_and_unlinks_socket_for_next_start(self):
         with tempfile.TemporaryDirectory() as directory:
