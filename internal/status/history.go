@@ -9,14 +9,21 @@ import (
 	"strconv"
 
 	"github.com/VolkovDani/models-configurator/internal/history"
+	"github.com/VolkovDani/models-configurator/internal/manager"
 )
 
 //go:embed history.html
 var historyHTML string
-var historyPage = template.Must(template.New("history").Parse(historyHTML))
+var historyPage = template.Must(template.New("history").Funcs(template.FuncMap{"endpoint": manager.InferenceEndpoint}).Parse(historyHTML))
 
 //go:embed history.js
 var historyScript string
+
+//go:embed chart/history-chart.js
+var historyChartScript string
+
+//go:embed chart/licenses.txt
+var historyChartLicenses string
 
 const historyPageSize = 50
 
@@ -25,6 +32,8 @@ func RegisterHistory(mux *http.ServeMux, store *history.Store) {
 	mux.Handle("/history", handler)
 	mux.Handle("/history.json", handler)
 	mux.Handle("/history.js", handler)
+	mux.Handle("/history-chart.js", handler)
+	mux.Handle("/history-chart-licenses.txt", handler)
 }
 
 type historyHandler struct {
@@ -43,9 +52,18 @@ func (h historyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	if r.URL.Path == "/history.js" {
+	switch r.URL.Path {
+	case "/history.js":
 		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 		io.WriteString(w, historyScript)
+		return
+	case "/history-chart.js":
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		io.WriteString(w, historyChartScript)
+		return
+	case "/history-chart-licenses.txt":
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		io.WriteString(w, historyChartLicenses)
 		return
 	}
 
