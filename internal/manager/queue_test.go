@@ -13,6 +13,8 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/VolkovDani/models-configurator/internal/history"
 )
 
 func TestDefaultQueueSharesCapacityBetweenChatAndEmbeddings(t *testing.T) {
@@ -114,6 +116,8 @@ func TestDispatcherAdmitsOldestEligibleAndRemovesCanceledWaiters(t *testing.T) {
 func TestInferenceQueueOverflowTimeoutAndRelease(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		q := newDispatcher(1)
+		var recorded []history.Call
+		q.record = func(call history.Call) { recorded = append(recorded, call) }
 		if err := q.acquire(t.Context(), ""); err != nil {
 			t.Fatal(err)
 		}
@@ -127,7 +131,7 @@ func TestInferenceQueueOverflowTimeoutAndRelease(t *testing.T) {
 		call := func(ctx context.Context) int {
 			req := httptest.NewRequestWithContext(ctx, "POST", "/v1/chat/completions", nil)
 			w := httptest.NewRecorder()
-			q.run(w, req, p, invoke)
+			q.run(w, req, p, "chat", invoke)
 			return w.Code
 		}
 		done := make(chan int, 128)
@@ -151,15 +155,48 @@ func TestInferenceQueueOverflowTimeoutAndRelease(t *testing.T) {
 		q.release("")
 		req := httptest.NewRequest("POST", "/v1/chat/completions", nil)
 		w := httptest.NewRecorder()
-		q.run(w, req, p, func(context.Context) (any, error) { return nil, errors.New("provider failed") })
+		q.run(w, req, p, "chat", func(context.Context) (any, error) { return nil, errors.New("provider failed") })
 		if w.Code != http.StatusBadGateway {
 			t.Fatal(w.Code)
+		}
+		if len(recorded) != 1 || recorded[0].Status != 502 || recorded[0].Outcome != "failed" {
+			t.Fatalf("history = %+v, want one failed dispatch", recorded)
 		}
 		if err := q.acquire(t.Context(), ""); err != nil {
 			t.Fatal(err)
 		}
 		q.release("")
 	})
+}
+
+func TestInferenceHistoryRecordsActiveTimeoutAndCancellation(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		stop func(context.CancelFunc)
+	}{
+		{"timed_out", func(context.CancelFunc) { time.Sleep(2 * time.Minute) }},
+		{"canceled", func(cancel context.CancelFunc) { cancel() }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				q := newDispatcher(1)
+				done := make(chan history.Call, 1)
+				q.record = func(call history.Call) { done <- call }
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				req := httptest.NewRequestWithContext(ctx, "POST", "/v1/chat/completions", nil)
+				go q.run(httptest.NewRecorder(), req, provider{}, "chat", func(ctx context.Context) (any, error) {
+					<-ctx.Done()
+					return nil, ctx.Err()
+				})
+				synctest.Wait()
+				tc.stop(cancel)
+				if call := <-done; call.Outcome != tc.name || call.Status != http.StatusBadGateway {
+					t.Fatalf("history = %+v, want %s", call, tc.name)
+				}
+			})
+		})
+	}
 }
 
 func TestNPUQueueAliasesAllowConcurrentEmbeddings(t *testing.T) {
@@ -251,7 +288,7 @@ func TestInferenceDeadlineIncludesQueueWait(t *testing.T) {
 		done := make(chan time.Duration, 1)
 		go func() {
 			req := httptest.NewRequest("POST", "/v1/chat/completions", nil)
-			q.run(httptest.NewRecorder(), req, p, func(ctx context.Context) (any, error) {
+			q.run(httptest.NewRecorder(), req, p, "chat", func(ctx context.Context) (any, error) {
 				deadline, _ := ctx.Deadline()
 				done <- time.Until(deadline)
 				return nil, nil

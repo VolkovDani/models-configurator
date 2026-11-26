@@ -27,7 +27,7 @@ class PackagingTest(unittest.TestCase):
         manager = services["models-configurator"]
         self.assertFalse(manager.get("devices"))
         self.assertEqual(manager["group_add"], ["1234"])
-        mounts = {v["target"]: v for v in manager["volumes"]}
+        mounts = {v["target"]: v for v in manager["volumes"] if v["type"] == "bind"}
         self.assertEqual(set(mounts), {"/etc/models.json", "/run/models-npu"})
         self.assertTrue(mounts["/run/models-npu"]["read_only"])
         self.assertEqual(mounts["/run/models-npu"]["source"], "/example/run")
