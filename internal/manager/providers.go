@@ -39,6 +39,10 @@ func (p upstream) requestBounded(ctx context.Context, method, path string, input
 			return err
 		}
 	}
+	return p.requestJSONBounded(ctx, method, path, body, out, limit)
+}
+
+func (p upstream) requestJSONBounded(ctx context.Context, method, path string, body []byte, out any, limit int64) error {
 	req, err := http.NewRequestWithContext(ctx, method, p.base+path, bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -47,7 +51,7 @@ func (p upstream) requestBounded(ctx context.Context, method, path string, input
 	if p.npuCallID != "" {
 		req.Header.Set(npuCallHeader, p.npuCallID)
 	}
-	if input != nil {
+	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	if p.key != "" {
@@ -154,15 +158,12 @@ func (p provider) chat(ctx context.Context, in chatRequestBody) (any, error) {
 	if err := p.verify(ctx); err != nil {
 		return nil, err
 	}
-	options := p.model.OllamaChat.options()
+	options := p.model.OllamaChat.options(in.MaxCompletionTokens)
 	if in.Temperature != nil {
 		options["temperature"] = *in.Temperature
 	}
 	if in.TopP != nil {
 		options["top_p"] = *in.TopP
-	}
-	if in.MaxCompletionTokens != nil {
-		options["num_predict"] = *in.MaxCompletionTokens
 	}
 	body := map[string]any{"model": in.Model, "messages": in.Messages, "stream": false, "truncate": false, "shift": false, "options": options}
 	if in.ResponseFormat != nil {

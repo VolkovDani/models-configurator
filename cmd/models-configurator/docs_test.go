@@ -69,7 +69,7 @@ func TestOpenAPIOperations(t *testing.T) {
 		t.Fatalf("OpenAPI version %q, want 3.1.x", spec.OpenAPI)
 	}
 	getPaths := []string{"/status", "/v1/models"}
-	postPaths := []string{"/v1/chat/completions", "/v1/embeddings", "/v1/decisions", "/v1/bge-m3/encode"}
+	postPaths := []string{"/v1/chat/completions", "/v1/chat/token-count", "/v1/embeddings", "/v1/decisions", "/v1/bge-m3/encode"}
 	if len(spec.Paths) != len(getPaths)+len(postPaths) {
 		t.Errorf("documented %d paths, want %d", len(spec.Paths), len(getPaths)+len(postPaths))
 	}
