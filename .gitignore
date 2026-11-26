@@ -9,3 +9,5 @@ __pycache__/
 /.bge/
 
 /frontend/node_modules/
+
+/model-settings.json

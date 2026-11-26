@@ -20,20 +20,25 @@ type Config struct {
 }
 
 type Model struct {
-	Name     string `json:"name"`
-	Provider string `json:"provider"`
-	BaseURL  string `json:"base_url"`
-	Model    string `json:"model"`
-	Role     string `json:"role"`
-	Digest   string `json:"digest,omitempty"`
-	Revision string `json:"revision,omitempty"`
-	KeyEnv   string `json:"key_env,omitempty"`
+	Name       string              `json:"name"`
+	Provider   string              `json:"provider"`
+	BaseURL    string              `json:"base_url"`
+	Model      string              `json:"model"`
+	Role       string              `json:"role"`
+	Digest     string              `json:"digest,omitempty"`
+	Revision   string              `json:"revision,omitempty"`
+	KeyEnv     string              `json:"key_env,omitempty"`
+	OllamaChat *OllamaChatSettings `json:"ollama_chat,omitempty"`
 }
 
 // ID includes the adapter contract version, so a semantic change to inference
 // can invalidate stored profiles even when the weights stay the same.
 func (m Model) ID() string {
-	identity, _ := json.Marshal([]string{"models-configurator-v1", m.Provider, strings.TrimRight(m.BaseURL, "/"), m.Model, m.Role, strings.TrimPrefix(m.Digest, "sha256:"), m.Revision})
+	fields := []any{"models-configurator-v1", m.Provider, strings.TrimRight(m.BaseURL, "/"), m.Model, m.Role, strings.TrimPrefix(m.Digest, "sha256:"), m.Revision}
+	if m.OllamaChat != nil {
+		fields = append(fields, m.OllamaChat.options())
+	}
+	identity, _ := json.Marshal(fields)
 	digest := sha256.Sum256(identity)
 	return m.Provider + "." + m.Name + "." + hex.EncodeToString(digest[:])
 }
@@ -103,6 +108,9 @@ func (cfg Config) validate() error {
 func (m Model) validate() error {
 	if !namePattern.MatchString(m.Name) || !modelPattern.MatchString(m.Model) || (m.Role != "chat" && m.Role != "embeddings" && m.Role != "decision") {
 		return errors.New("invalid model name, upstream model or role")
+	}
+	if m.OllamaChat != nil && (m.Provider != "ollama" || m.Role != "chat" || !m.OllamaChat.valid()) {
+		return errors.New("invalid Ollama chat settings")
 	}
 	if m.Role == "decision" && m.Provider != "ollama" {
 		return errors.New("decision profiles require local Ollama")

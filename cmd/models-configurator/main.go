@@ -58,6 +58,18 @@ func service(cfg manager.Config) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	settings := cfg.Settings(limit)
+	active := cfg
+	if path := os.Getenv("MODELS_SETTINGS_PATH"); path != "" {
+		settings, err = manager.ReadSettings(path)
+		if err != nil {
+			return nil, fmt.Errorf("read model settings: %w", err)
+		}
+		active, err = settings.Apply(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("apply model settings: %w", err)
+		}
+	}
 	path := os.Getenv("MODELS_HISTORY_PATH")
 	if path == "" {
 		path = "logs/model-history.jsonl"
@@ -66,7 +78,7 @@ func service(cfg manager.Config) (http.Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open model call history: %w", err)
 	}
-	api, err := manager.NewWithHistory(cfg, limit, func(call history.Call) {
+	api, err := manager.NewWithHistory(active, settings.MaxParallel, func(call history.Call) {
 		if err := calls.Record(call); err != nil {
 			log.Printf("Record model call history: %v", err)
 		}
@@ -78,6 +90,7 @@ func service(cfg manager.Config) (http.Handler, error) {
 	mux.Handle("/v1/", api)
 	apidocs.Register(mux)
 	status.RegisterHistory(mux, calls)
-	mux.Handle("/", status.New(cfg))
+	status.RegisterSettings(mux, cfg, settings)
+	mux.Handle("/", status.New(active))
 	return localAccess(mux), nil
 }

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="{{.Lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Label "settings_title"}} · Models Configurator</title>
+<style>
+:root{font-family:Inter,system-ui,sans-serif;color:#18352f;background:#f5f7f3}
+*{box-sizing:border-box}body{max-width:56rem;margin:auto;padding:0 clamp(1rem,5vw,3rem) 3rem}
+header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:1rem;padding:1.3rem 0;border-bottom:1px solid #cbd8cf}nav{display:flex;gap:1rem}
+a{color:#13594b;text-underline-offset:.24em}a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #238275;outline-offset:3px}
+h1{font-size:clamp(2rem,5vw,3rem);letter-spacing:-.04em;line-height:1.15;margin:2.1rem 0 1rem}
+p{line-height:1.5}.help{color:#445b52}.error{color:#8b2525;font-weight:600}
+fieldset{background:white;border:1px solid #cbd8cf;border-radius:.7rem;padding:1rem;margin:0 0 1.1rem;min-width:0}
+legend{font-weight:650;padding:0 .4rem;overflow-wrap:anywhere}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,14rem),1fr));gap:.9rem}
+label{display:grid;align-content:start;gap:.4rem}input:not([type=checkbox]),select{font:inherit;color:inherit;width:100%;min-width:0;padding:.5rem .6rem;border:1px solid #728b81;border-radius:.35rem;background:white}
+.toggle{display:flex;align-items:center;gap:.5rem;margin:.85rem 0 0}input[type=checkbox]{accent-color:#13594b;width:1.2rem;height:1.2rem;margin:0}
+button{font:inherit;font-weight:600;color:#fff;background:#13594b;border:1px solid #13594b;border-radius:.4rem;padding:.62rem .9rem;cursor:pointer}
+.manifest{margin-top:2rem;padding-top:1rem;border-top:1px solid #cbd8cf}.manifest button{margin-top:.8rem}
+</style>
+</head>
+<body>
+<header><a href="/?lang={{.Lang}}">Models Configurator</a>
+<nav aria-label="{{.Label "languages"}}"><a href="/settings?lang=en" lang="en" {{if eq .Lang "en"}}aria-current="page"{{end}}>English</a><a href="/settings?lang=ru" lang="ru" {{if eq .Lang "ru"}}aria-current="page"{{end}}>Русский</a></nav></header>
+<main>
+<h1>{{.Label "settings_title"}}</h1>
+<p class="help">{{.Label "settings_restart"}}</p>
+{{if .Error}}<p class="error" role="alert">{{.Label .Error}}</p>{{end}}
+<form method="post" action="/settings?lang={{.Lang}}">
+<fieldset><legend>{{.Label "settings_manager"}}</legend>
+<div class="fields"><label>{{.Label "settings_parallel"}}<input type="number" name="parallel" min="1" step="1" value="{{.Parallel}}" required></label></div>
+</fieldset>
+{{range .Rows}}{{$row := .}}
+<fieldset><legend>{{.Model.Name}} · {{$.Label .Model.Provider}}</legend>
+<div class="fields">
+<label>{{$.Label "settings_name"}}<input name="{{.Index}}.name" value="{{.Edit.Name}}" maxlength="80" pattern="[a-zA-Z0-9][a-zA-Z0-9_.\-]{0,79}" required></label>
+<label>{{$.Label "role"}}<select name="{{.Index}}.role">{{range .Model.EditableRoles}}<option value="{{.}}" {{if eq . $row.Edit.Role}}selected{{end}}>{{$.Label .}}</option>{{end}}</select></label>
+{{if and (eq .Model.Provider "ollama") (ne .Model.Role "decision")}}
+<label>{{$.Label "settings_installed"}}<select name="{{.Index}}.installed"><option value="">{{.Model.Model}} · {{$.Label "settings_configured"}}</option>{{range .Choices}}<option value="{{.Value}}" {{if eq .Value $row.Selected}}selected{{end}}>{{.Name}}</option>{{end}}</select></label>
+<label>{{$.Label "settings_context"}}<input type="number" name="{{.Index}}.context" min="1" max="32768" step="1" placeholder="32768" value="{{with .Edit.OllamaChat}}{{with .ContextTokens}}{{.}}{{end}}{{end}}"></label>
+<label>{{$.Label "settings_completion"}}<input type="number" name="{{.Index}}.completion" min="1" max="16384" step="1" placeholder="1024" value="{{with .Edit.OllamaChat}}{{with .CompletionTokens}}{{.}}{{end}}{{end}}"></label>
+<label>{{$.Label "settings_temperature"}}<input type="number" name="{{.Index}}.temperature" min="0" max="2" step="any" placeholder="0" value="{{with .Edit.OllamaChat}}{{with .Temperature}}{{.}}{{end}}{{end}}"></label>
+<label>{{$.Label "settings_top_p"}}<input type="number" name="{{.Index}}.top_p" min="0" max="1" step="any" value="{{with .Edit.OllamaChat}}{{with .TopP}}{{.}}{{end}}{{end}}"></label>
+{{end}}
+</div>
+<label class="toggle"><input type="checkbox" name="{{.Index}}.enabled" {{if not .Edit.Disabled}}checked{{end}}> {{$.Label "settings_enabled"}}</label>
+</fieldset>
+{{end}}
+<button type="submit">{{.Label "settings_save"}}</button>
+</form>
+{{range .Rows}}{{if eq .Model.Provider "openvino-npu"}}
+<section class="manifest">
+<h2>{{.Model.Name}} · {{$.Label "settings_manifest"}}</h2>
+<p class="help">{{$.Label "settings_manifest_help"}}</p>
+<form method="post" action="/settings/npu?lang={{$.Lang}}" enctype="multipart/form-data">
+<input type="hidden" name="profile" value="{{.Model.ID}}">
+<div class="fields">
+<label>{{$.Label "settings_manifest_current"}}<input type="file" name="manifest" accept=".json,application/json" required></label>
+<label>{{$.Label "settings_prompt"}}<input type="number" name="prompt" min="1" max="32768" step="1" required></label>
+<label>{{$.Label "settings_completion"}}<input type="number" name="completion" min="1" max="4096" step="1" required></label>
+</div>
+<button type="submit">{{$.Label "settings_manifest_save"}}</button>
+</form>
+</section>
+{{end}}{{end}}
+</main>
+</body>
+</html>

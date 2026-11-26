@@ -56,6 +56,12 @@ Use the same configuration and directories. Start the runtime in one terminal. A
 
 In another terminal with the same configuration run `docker compose -f compose.yml -f compose.npu-host.yml up --build -d`. One runtime owns each socket. Each new worker verifies the pinned artifacts, selected device and package versions. The CLI preserves existing model directories. Stop a native runtime with Ctrl+C, or stop the container runtime through Compose.
 
+## Change NPU token limits in the web panel
+
+Open **Model settings** and find the NPU profile. Upload its current pinned manifest, enter the input and response limits, and choose **Save new manifest**. The editor checks the uploaded manifest against the configured SHA-256 and changes only the two token limits. The download is named `npu-<sha256>.json`. The permitted input range is 1–32768 tokens and the response range is 1–4096. Verify the chosen limits on your NPU.
+
+To apply, set `MODELS_NPU_MANIFEST` to the downloaded file and `MODELS_NPU_PROFILE` to the SHA-256 in its filename. Set the same digest on the NPU profile in `models.json`, then recreate the runtime and manager. After the runtime reports that the new profile is loaded, update the client with its new ID from `/v1/models`. Keep the previous manifest and digest for rollback.
+
 ## API and diagnostics
 
 Use `POST /v1/chat/completions` with the full manager ID, messages and `response_format.type=json_schema` with `strict: true`. The pinned NPU uses greedy decoding. Streaming and sampling overrides are unsupported. The request token cap is an upper bound within the manifest's limit. Oversized prompts and incomplete generations fail explicitly. The private socket accepts up to 65,536 request bytes. Domain-specific checks belong to the caller.

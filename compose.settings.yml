@@ -1,0 +1,12 @@
+# Apply a settings file saved from the web panel.
+services:
+  models-configurator:
+    environment:
+      MODELS_SETTINGS_PATH: /etc/model-settings.json
+    volumes:
+      - type: bind
+        source: ${MODELS_SETTINGS_FILE:-./model-settings.json}
+        target: /etc/model-settings.json
+        read_only: true
+        bind:
+          create_host_path: false
