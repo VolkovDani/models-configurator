@@ -67,7 +67,7 @@ curl -sS http://127.0.0.1:8317/v1/embeddings -H 'Content-Type: application/json'
 
 Open **Model call history** from the status panel or visit http://127.0.0.1:8317/history. The page shows when each call started (UTC), the pinned model profile and provider, the operation, its outcome and HTTP status, and the time spent executing the call, excluding queue wait. Scroll down or use **Load more** for earlier calls.
 
-The **Call durations** chart appears above the table when history has calls. Select a model profile to see its calls as points with start time (UTC) and duration (ms). Each operation has its own plot with the same axes, and the legend shows the HTTP method and path. Loading earlier calls extends the chart. The chart runs locally from an embedded Recharts bundle.
+The **Call durations** chart appears above the table when history has calls. Select a usage type to compare model profiles for that operation. Each point shows the start time (UTC) and duration (ms) of one call. The legend identifies the model profiles and shows the HTTP method and path. Loading earlier calls extends the chart. The chart runs locally from an embedded Recharts bundle.
 
 The manager records chat, embedding, decision, and BGE-M3 requests once they leave the queue and reach the adapter. Refusals and failures appear in history. Provider probes, invalid requests, and requests rejected or canceled while waiting do not appear. The history contains operational metadata only. It stores no prompts, outputs, third-party error text, credentials, caller identifiers, or token counts. Like the rest of the local service, the history is shared with applications that have trusted network access to the manager.
 
