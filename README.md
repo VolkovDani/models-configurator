@@ -63,6 +63,18 @@ curl -sS http://127.0.0.1:8317/v1/embeddings -H 'Content-Type: application/json'
 
 [Run local decision models](docs/decision-models.md) with System One D3 or Laya.
 
+## Model call history
+
+Open **Model call history** from the status panel or visit http://127.0.0.1:8317/history. The page shows when each call started (UTC), the pinned model profile and provider, the operation, its outcome and HTTP status, and the time spent executing the call, excluding queue wait. Scroll down or use **Load more** for earlier calls.
+
+The **Call durations** chart appears above the table when history has calls. Select a model profile to see its calls as points with start time (UTC) and duration (ms). Each operation has its own plot with the same axes, and the legend shows the HTTP method and path. Loading earlier calls extends the chart. The chart runs locally from an embedded Recharts bundle.
+
+The manager records chat, embedding, decision, and BGE-M3 requests once they leave the queue and reach the adapter. Refusals and failures appear in history. Provider probes, invalid requests, and requests rejected or canceled while waiting do not appear. The history contains operational metadata only. It stores no prompts, outputs, third-party error text, credentials, caller identifiers, or token counts. Like the rest of the local service, the history is shared with applications that have trusted network access to the manager.
+
+For programmatic access, use `GET /history.json`. It returns up to 50 calls in descending record order in `calls`. If the response contains `next_before`, pass it as `?before=<next_before>` to get older calls.
+
+The most recent 10,000 records are available across restarts. Compose stores them in the `model_history` volume, which survives container replacement. On the host, the default is `logs/model-history.jsonl` relative to the working directory. Set `MODELS_HISTORY_PATH` to use a different file. Each manager process needs its own file. After startup, write failures are logged and inference responses remain available.
+
 ## Concurrent requests
 
 The manager runs one inference request at a time by default. Chat, embedding and decision requests share the limit. To allow two independent runtimes to work at once, set the following in the manager's private `.env` and apply it with `docker compose up -d models-configurator`. For a native launch, export the variable before starting the server.
@@ -80,3 +92,18 @@ Run the OpenVINO worker in Docker or on the host and select its pinned generatio
 [Run BGE-M3 on Intel Arc](docs/bge-arc.md) for dense embeddings and optional sparse and ColBERT representations.
 
 Run `go test -race ./...`, `go vet ./...`, `python3 -m unittest discover -s runtime/npu` and `python3 -m unittest discover -s tests` for deterministic checks.
+
+### Rebuild the history chart
+
+The checked-in bundle lets Go and Docker builds serve the chart offline. To update it after changing the chart source, use Node.js 26 and Bun 1.4.4.
+
+```bash
+cd frontend
+bun install --frozen-lockfile
+bun run format:check
+bun run typecheck
+bun run test
+bun run build
+```
+
+Commit the regenerated bundle and third-party notices in `internal/status/chart/`. CI verifies that both match the sources and lockfile.

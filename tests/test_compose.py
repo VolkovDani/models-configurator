@@ -21,6 +21,16 @@ class DeploymentTest(unittest.TestCase):
         self.assertEqual(config["networks"]["clients"]["name"], "models-configurator-clients")
         self.assertTrue(service["volumes"][0]["read_only"])
 
+    def test_history_is_stored_in_a_dedicated_writable_volume(self):
+        config = self.compose()
+        service = config["services"]["models-configurator"]
+        path = service["environment"]["MODELS_HISTORY_PATH"]
+        volume = next(v for v in service["volumes"] if v["type"] == "volume")
+        self.assertTrue(Path(path).is_relative_to(volume["target"]))
+        self.assertEqual(volume["source"], "model_history")
+        self.assertFalse(volume.get("read_only", False))
+        self.assertIn("model_history", config["volumes"])
+
     def test_local_provider_is_private_to_manager(self):
         config = self.compose("--profile", "cpu")
         provider = config["services"]["ollama"]

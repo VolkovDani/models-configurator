@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 
 func TestAPIDocumentation(t *testing.T) {
 	t.Setenv("MODELS_MAX_PARALLEL_REQUESTS", "1")
+	t.Setenv("MODELS_HISTORY_PATH", filepath.Join(t.TempDir(), "history.jsonl"))
 	h, err := service(manager.Config{Models: []manager.Model{}})
 	if err != nil {
 		t.Fatal(err)
@@ -46,6 +48,7 @@ func TestAPIDocumentation(t *testing.T) {
 
 func TestOpenAPIOperations(t *testing.T) {
 	t.Setenv("MODELS_MAX_PARALLEL_REQUESTS", "1")
+	t.Setenv("MODELS_HISTORY_PATH", filepath.Join(t.TempDir(), "history.jsonl"))
 	h, err := service(manager.Config{Models: []manager.Model{}})
 	if err != nil {
 		t.Fatal(err)

@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/VolkovDani/models-configurator/internal/history"
 )
 
 const (
@@ -186,7 +188,21 @@ func TestOllamaDecision(t *testing.T) {
 			defer up.Close()
 			model := fixture(up.URL, "decision")
 			model.Digest = "sha256:" + tc.digest
-			w := perform(mustNew(t, model), "POST", "/v1/decisions", decisionBody(model.ID(), tc.digest, state))
+			var recorded []history.Call
+			h, err := NewWithHistory(Config{Models: []Model{model}}, 1, func(call history.Call) { recorded = append(recorded, call) })
+			if err != nil {
+				t.Fatal(err)
+			}
+			w := perform(h, "POST", "/v1/decisions", decisionBody(model.ID(), tc.digest, state))
+			outcome := "succeeded"
+			if tc.code != 200 {
+				outcome = "failed"
+			} else if tc.reason != "" {
+				outcome = "refused"
+			}
+			if len(recorded) != 1 || recorded[0].Operation != "decision" || recorded[0].Outcome != outcome || recorded[0].Status != tc.code {
+				t.Fatalf("history = %+v, want one %s decision at %d", recorded, outcome, tc.code)
+			}
 			if w.Code != tc.code || !reflect.DeepEqual(paths, tc.paths) || strings.Contains(w.Body.String(), "private upstream") || strings.Contains(w.Body.String(), state) {
 				t.Fatalf("unexpected response %d %s, paths %v", w.Code, w.Body, paths)
 			}

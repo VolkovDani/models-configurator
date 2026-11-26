@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/VolkovDani/models-configurator/internal/history"
 )
 
 func bgeModel(base string) Model {
@@ -149,16 +151,25 @@ func TestBGEWorkerContract(t *testing.T) {
 					t.Errorf("unexpected worker request %s", r.URL.Path)
 				}
 			}))
-			h := mustNew(t, m)
+			var recorded []history.Call
+			h, err := NewWithHistory(Config{Models: []Model{m}}, 1, func(call history.Call) { recorded = append(recorded, call) })
+			if err != nil {
+				t.Fatal(err)
+			}
 			path := "/v1/bge-m3/encode"
+			operation := "bge_encode"
 			body := map[string]any{"model": m.ID(), "input": []string{"private input"}, "modes": modes}
 			if tc.scenario == "dense" {
 				path = "/v1/embeddings"
+				operation = "embeddings"
 				delete(body, "modes")
 				body["dimensions"] = 1024
 			}
 			raw, _ := json.Marshal(body)
 			w := perform(h, "POST", path, string(raw))
+			if len(recorded) != 1 || recorded[0].Operation != operation || recorded[0].Status != tc.status {
+				t.Fatalf("history = %+v, want one %s call at %d", recorded, operation, tc.status)
+			}
 			if w.Code != tc.status || calls != tc.calls || strings.Contains(w.Body.String(), "private input") {
 				t.Fatalf("status %d calls %d", w.Code, calls)
 			}

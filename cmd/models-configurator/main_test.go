@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -40,6 +41,7 @@ func TestServiceRejectsInvalidParallelRequestLimit(t *testing.T) {
 }
 
 func TestServiceRoutes(t *testing.T) {
+	t.Setenv("MODELS_HISTORY_PATH", filepath.Join(t.TempDir(), "calls.jsonl"))
 	t.Setenv("MODELS_MAX_PARALLEL_REQUESTS", "1")
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/models" {
