@@ -24,6 +24,8 @@ h1{font-size:clamp(2.2rem,5vw,4rem);letter-spacing:-.05em;line-height:1.1;margin
 .history-chart-header select{font:inherit;color:#18352f;background:#fff;max-width:min(22rem,70vw);padding:.35rem .55rem;border:1px solid #aabbb0;border-radius:.35rem}
 .history-chart-axis{margin:.65rem 0 .2rem;color:#445b52;font-size:.8rem}
 .history-plot-area{min-width:0}
+.history-chart-x-axis{text-align:center;margin:0 0 .65rem}
+.history-chart-filters{display:flex;gap:.6rem 1rem;flex-wrap:wrap}
 .history-plot-tooltip{display:grid;gap:.25rem;background:#fff;border:1px solid #cbd8cf;border-radius:.35rem;padding:.45rem .65rem;font-size:.85rem}
 .history-chart-legend{display:flex;flex-wrap:wrap;gap:.45rem 1rem;margin:.1rem 0 0;padding:0;list-style:none;color:#445b52;font-size:.83rem}
 .history-chart-legend li{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}
@@ -60,7 +62,9 @@ form{margin-top:1rem}
 <a href="/history?lang={{.Lang}}">{{if .OlderPage}}{{.Label "history_latest"}}{{else}}{{.Label "refresh"}}{{end}}</a>
 </div>
 {{if .Calls}}
-<div id="duration-chart" data-title="{{.Label "history_chart_title"}}" data-chart-usage="{{.Label "history_usage_type"}}" data-duration="{{.Label "history_duration"}}" data-unit="{{.Label "history_ms"}}" data-time="{{.Label "history_time"}}"></div>
+<div id="duration-chart" data-title="{{.Label "history_chart_title"}}" data-chart-usage="{{.Label "history_usage_type"}}" data-duration="{{.Label "history_duration"}}" data-unit="{{.Label "history_ms"}}" data-token-metric="{{.Label "history_token_metric"}}"
+ data-input-tokens="{{.Label "history_input_tokens"}}" data-output-tokens="{{.Label "history_output_tokens"}}"
+ data-total-tokens="{{.Label "history_total_tokens"}}" data-no-token-data="{{.Label "history_no_token_data"}}"></div>
 <div class="table-wrap" role="region" aria-label="{{.Label "history_title"}}" tabindex="0">
 <table>
 <thead><tr>
@@ -69,15 +73,19 @@ form{margin-top:1rem}
 <th scope="col">{{.Label "history_operation"}}</th>
 <th scope="col">{{.Label "history_outcome"}}</th>
 <th scope="col">{{.Label "history_duration"}}</th>
+<th scope="col">{{.Label "history_input_tokens"}}</th>
+<th scope="col">{{.Label "history_output_tokens"}}</th>
 </tr></thead>
 <tbody id="calls">
 {{range .Calls}}
-<tr data-model-id="{{.ModelID}}" data-model-name="{{.Profile}}" data-operation="{{.Operation}}" data-endpoint="{{endpoint .Operation}}" data-duration-ms="{{.DurationMS}}">
+<tr data-model-id="{{.ModelID}}" data-model-name="{{.Profile}}" data-operation="{{.Operation}}" data-endpoint="{{endpoint .Operation}}" data-duration-ms="{{.DurationMS}}"{{if .InputTokens}} data-input-tokens="{{.InputTokens}}"{{end}}{{if .OutputTokens}} data-output-tokens="{{.OutputTokens}}"{{end}}>
 <td><time datetime="{{.StartedAt.Format "2006-01-02T15:04:05.999999999Z07:00"}}">{{.StartedAt.Format "2006-01-02 15:04:05"}}</time></td>
 <th scope="row">{{.Profile}}<small>{{$.Label .Provider}}</small><details><summary>{{$.Label "id"}}</summary><code>{{.ModelID}}</code></details></th>
 <td data-operation-label>{{$.Label .Operation}}</td>
 <td class="{{.Outcome}}">{{$.Label .Outcome}} <small>HTTP {{.Status}}</small></td>
 <td class="number">{{.DurationMS}} {{$.Label "history_ms"}}</td>
+<td class="number">{{if .InputTokens}}{{.InputTokens}}{{else}}—{{end}}</td>
+<td class="number">{{if .OutputTokens}}{{.OutputTokens}}{{else}}—{{end}}</td>
 </tr>
 {{end}}
 </tbody>

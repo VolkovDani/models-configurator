@@ -242,7 +242,7 @@ class RuntimeLifecycleTests(unittest.TestCase):
                 check_disconnect.set()
             with self.assertRaisesRegex(ValueError, 'cancelled'):
                 active.result(timeout=5)
-            restarted_connection.responses.append({'content': CONTENT, 'prompt_tokens': 10, 'max_new_tokens': 512, 'seconds': .01})
+            restarted_connection.responses.append({'content': CONTENT, 'prompt_tokens': 10, 'generated_tokens': 3, 'max_new_tokens': 512, 'seconds': .01})
             result = runtime.generate(request(), server)
         context.Process.assert_called_once_with(target=npu.worker, args=(child, runtime.model, runtime.manifest, runtime.cache), daemon=True)
         context.Pipe.assert_called_once_with()
@@ -362,7 +362,7 @@ class RuntimeLifecycleTests(unittest.TestCase):
         spawn.assert_called_once_with('spawn')
 
     def test_model_drift_rejected_before_dispatch_and_after_generation(self):
-        runtime = runtime_fixture([{'content': CONTENT, 'prompt_tokens': 10, 'max_new_tokens': 512, 'seconds': .01}])
+        runtime = runtime_fixture([{'content': CONTENT, 'prompt_tokens': 10, 'generated_tokens': 3, 'max_new_tokens': 512, 'seconds': .01}])
         with mock.patch.object(npu, 'inventory', return_value={}):
             with self.assertRaisesRegex(ValueError, 'model changed'):
                 runtime.generate(request(), None)
@@ -382,13 +382,13 @@ class RuntimeLifecycleTests(unittest.TestCase):
             spawn.assert_not_called()
 
     def test_successful_result_retains_profile_and_exact_content(self):
-        runtime = runtime_fixture([{'content': CONTENT, 'prompt_tokens': 10, 'max_new_tokens': 512, 'seconds': .01}])
+        runtime = runtime_fixture([{'content': CONTENT, 'prompt_tokens': 10, 'generated_tokens': 3, 'max_new_tokens': 512, 'seconds': .01}])
         call_id = 'c'*32
         with mock.patch.object(npu, 'inventory', return_value=runtime.snapshot), \
              mock.patch.object(npu, 'lifecycle_event') as log_event, \
              contextlib.redirect_stdout(io.StringIO()):
             result = runtime.generate(request(), None, call_id=call_id)
-        self.assertEqual(result, {'profile': runtime.profile, 'device': 'NPU', 'content': CONTENT})
+        self.assertEqual(result, {'profile': runtime.profile, 'device': 'NPU', 'content': CONTENT, 'input_tokens': 10, 'output_tokens': 3})
         log_event.assert_any_call('generation_started', profile=runtime.profile,
                                   stage='NPU_GENERATION', call_id=call_id)
         self.assertFalse(runtime.lock.locked())
@@ -459,6 +459,7 @@ class WorkerTests(unittest.TestCase):
         tokenizer.encode.assert_called_once_with('full formatted template', add_special_tokens=False, truncation=False)
         tokenizer.decode.assert_called_once_with([11, 12, 13])
         self.assertEqual(connection.sent[1]['content'], CONTENT)
+        self.assertEqual(connection.sent[1]['generated_tokens'], 3)
         self.assertTrue(connection.closed)
 
     def test_worker_count_matches_generation_template_and_completion_limit(self):

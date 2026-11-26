@@ -126,11 +126,12 @@ type choice struct {
 	Message      message `json:"message"`
 }
 
-func chatResult(id, finish string, msg outputMessage) (any, error) {
+func chatResult(id, finish string, msg outputMessage, usage tokenUsage) (any, error) {
 	if (finish != "stop" && finish != "length") || msg.Role != "assistant" || msg.Content == nil || msg.Refusal != nil || len(msg.ToolCalls) != 0 || (msg.FunctionCall != nil && string(msg.FunctionCall) != "null") {
 		return nil, errors.New("unsupported model completion")
 	}
-	return map[string]any{"object": "chat.completion", "model": id, "choices": []choice{{0, finish, message{msg.Role, *msg.Content}}}}, nil
+	body := map[string]any{"object": "chat.completion", "model": id, "choices": []choice{{0, finish, message{msg.Role, *msg.Content}}}}
+	return measuredResult{body, usage}, nil
 }
 
 func (p provider) chat(ctx context.Context, in chatRequestBody) (any, error) {
@@ -141,7 +142,8 @@ func (p provider) chat(ctx context.Context, in chatRequestBody) (any, error) {
 	in.Model = p.model.Model
 	if p.model.Provider == "openai-compatible" {
 		var resp struct {
-			Model   string `json:"model"`
+			Model   string          `json:"model"`
+			Usage   json.RawMessage `json:"usage"`
 			Choices []struct {
 				FinishReason string        `json:"finish_reason"`
 				Message      outputMessage `json:"message"`
@@ -153,7 +155,7 @@ func (p provider) chat(ctx context.Context, in chatRequestBody) (any, error) {
 		if (resp.Model != "" && resp.Model != in.Model && resp.Model != p.model.Revision) || len(resp.Choices) != 1 {
 			return nil, errors.New("unexpected chat completion")
 		}
-		return chatResult(id, resp.Choices[0].FinishReason, resp.Choices[0].Message)
+		return chatResult(id, resp.Choices[0].FinishReason, resp.Choices[0].Message, compatibleUsage(resp.Usage, false))
 	}
 	if err := p.verify(ctx); err != nil {
 		return nil, err
@@ -170,12 +172,14 @@ func (p provider) chat(ctx context.Context, in chatRequestBody) (any, error) {
 		body["format"] = in.ResponseFormat.JSONSchema.Schema
 	}
 	var resp struct {
-		Model       string        `json:"model"`
-		RemoteHost  string        `json:"remote_host"`
-		RemoteModel string        `json:"remote_model"`
-		Done        bool          `json:"done"`
-		DoneReason  string        `json:"done_reason"`
-		Message     outputMessage `json:"message"`
+		Model        string          `json:"model"`
+		RemoteHost   string          `json:"remote_host"`
+		RemoteModel  string          `json:"remote_model"`
+		Done         bool            `json:"done"`
+		DoneReason   string          `json:"done_reason"`
+		Message      outputMessage   `json:"message"`
+		InputTokens  json.RawMessage `json:"prompt_eval_count"`
+		OutputTokens json.RawMessage `json:"eval_count"`
 	}
 	if err := p.request(ctx, "POST", "/api/chat", body, &resp); err != nil {
 		return nil, err
@@ -183,7 +187,8 @@ func (p provider) chat(ctx context.Context, in chatRequestBody) (any, error) {
 	if !resp.Done || resp.RemoteModel != "" || resp.RemoteHost != "" || (resp.Model != "" && OllamaTag(resp.Model) != in.Model) {
 		return nil, errors.New("incomplete or unexpected Ollama completion")
 	}
-	result, err := chatResult(id, resp.DoneReason, resp.Message)
+	usage := tokenUsage{input: tokenCount(resp.InputTokens), output: tokenCount(resp.OutputTokens)}
+	result, err := chatResult(id, resp.DoneReason, resp.Message, usage)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +211,7 @@ type embeddingRow struct {
 	Object    string `json:"object"`
 }
 
-func embeddingResult(id string, rows []embeddingRow, n int, want *int) (any, error) {
+func embeddingResult(id string, rows []embeddingRow, n int, want *int, usage tokenUsage) (any, error) {
 	if len(rows) != n {
 		return nil, errors.New("embedding count mismatch")
 	}
@@ -232,7 +237,8 @@ func embeddingResult(id string, rows []embeddingRow, n int, want *int) (any, err
 		row.Object = "embedding"
 		ordered[*row.Index] = row
 	}
-	return map[string]any{"object": "list", "model": id, "data": ordered}, nil
+	body := map[string]any{"object": "list", "model": id, "data": ordered}
+	return measuredResult{body, usage}, nil
 }
 
 func (p provider) embed(ctx context.Context, in embeddingRequest) (any, error) {
@@ -245,14 +251,15 @@ func (p provider) embed(ctx context.Context, in embeddingRequest) (any, error) {
 		for i, row := range result.Data {
 			rows[i] = embeddingRow{Index: &i, Embedding: row.Dense}
 		}
-		return embeddingResult(in.Model, rows, len(in.Input), in.Dimensions)
+		return embeddingResult(in.Model, rows, len(in.Input), in.Dimensions, result.usage)
 	}
 	id := in.Model
 	in.Model = p.model.Model
 	if p.model.Provider == "openai-compatible" {
 		var resp struct {
-			Model string         `json:"model"`
-			Data  []embeddingRow `json:"data"`
+			Model string          `json:"model"`
+			Data  []embeddingRow  `json:"data"`
+			Usage json.RawMessage `json:"usage"`
 		}
 		if err := p.request(ctx, "POST", "/embeddings", in, &resp); err != nil {
 			return nil, err
@@ -260,7 +267,7 @@ func (p provider) embed(ctx context.Context, in embeddingRequest) (any, error) {
 		if resp.Model != "" && resp.Model != in.Model && resp.Model != p.model.Revision {
 			return nil, errors.New("unexpected embedding model")
 		}
-		return embeddingResult(id, resp.Data, len(in.Input), in.Dimensions)
+		return embeddingResult(id, resp.Data, len(in.Input), in.Dimensions, compatibleUsage(resp.Usage, true))
 	}
 	if err := p.verify(ctx); err != nil {
 		return nil, err
@@ -270,8 +277,9 @@ func (p provider) embed(ctx context.Context, in embeddingRequest) (any, error) {
 		body["dimensions"] = *in.Dimensions
 	}
 	var resp struct {
-		Model      string   `json:"model"`
-		Embeddings []vector `json:"embeddings"`
+		Model       string          `json:"model"`
+		Embeddings  []vector        `json:"embeddings"`
+		InputTokens json.RawMessage `json:"prompt_eval_count"`
 	}
 	if err := p.request(ctx, "POST", "/api/embed", body, &resp); err != nil {
 		return nil, err
@@ -283,7 +291,7 @@ func (p provider) embed(ctx context.Context, in embeddingRequest) (any, error) {
 	for i, v := range resp.Embeddings {
 		rows[i] = embeddingRow{Index: &i, Embedding: v}
 	}
-	result, err := embeddingResult(id, rows, len(in.Input), in.Dimensions)
+	result, err := embeddingResult(id, rows, len(in.Input), in.Dimensions, tokenUsage{input: tokenCount(resp.InputTokens)})
 	if err != nil {
 		return nil, err
 	}

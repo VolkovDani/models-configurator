@@ -161,7 +161,9 @@ func (p provider) npuChat(ctx context.Context, in chatRequestBody) (any, error) 
 	}
 	var resp struct {
 		npuBinding
-		Content string `json:"content"`
+		Content      string          `json:"content"`
+		InputTokens  json.RawMessage `json:"input_tokens"`
+		OutputTokens json.RawMessage `json:"output_tokens"`
 	}
 	if err := p.request(ctx, http.MethodPost, "/v1/generate", body, &resp); err != nil {
 		return nil, err
@@ -172,7 +174,8 @@ func (p provider) npuChat(ctx context.Context, in chatRequestBody) (any, error) 
 	if !json.Valid([]byte(resp.Content)) {
 		return nil, npuFailure("INVALID_OUTPUT")
 	}
-	return chatResult(in.Model, "stop", outputMessage{Role: "assistant", Content: &resp.Content})
+	usage := tokenUsage{input: tokenCount(resp.InputTokens), output: tokenCount(resp.OutputTokens)}
+	return chatResult(in.Model, "stop", outputMessage{Role: "assistant", Content: &resp.Content}, usage)
 }
 
 func (p provider) npuTokenCount(ctx context.Context, in chatRequestBody) (any, error) {

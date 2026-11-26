@@ -64,9 +64,9 @@ func TestHistoryChartMarkup(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, call := range []history.Call{
-		{ModelID: "embed.profile.rev", Profile: "embedding", Operation: "embeddings", DurationMS: 25},
+		{ModelID: "embed.profile.rev", Profile: "embedding", Operation: "embeddings", DurationMS: 25, InputTokens: new(11)},
 		{ModelID: "bge.profile.rev", Profile: "bge", Operation: "bge_encode", DurationMS: 403},
-		{ModelID: "chat.profile.rev", Profile: "chat", Operation: "chat", DurationMS: 171},
+		{ModelID: "chat.profile.rev", Profile: "chat", Operation: "chat", DurationMS: 171, InputTokens: new(20), OutputTokens: new(0)},
 		{ModelID: "decision.profile.rev", Profile: "decision", Operation: "decision", DurationMS: 16},
 	} {
 		if err := calls.Record(call); err != nil {
@@ -87,17 +87,26 @@ func TestHistoryChartMarkup(t *testing.T) {
 		`data-model-name="bge"`,
 		`data-chart-usage="Тип использования"`,
 		`data-operation="bge_encode"`,
-		`data-duration-ms="403"`,
+		`data-duration-ms="403">`,
+		`data-input-tokens="20" data-output-tokens="0"`,
+		`data-input-tokens="11">`,
+		`<th scope="col">Входные токены</th>`,
+		`<th scope="col">Выходные токены</th>`,
+		`<td class="number">0</td>`,
+		`<td class="number">—</td>`,
 		`data-endpoint="POST /v1/chat/completions"`,
 		`data-endpoint="POST /v1/embeddings"`,
 		`data-endpoint="POST /v1/decisions"`,
 		`data-endpoint="POST /v1/bge-m3/encode"`,
 		`src="/history-chart.js"`,
-		"Длительность вызовов",
+		"Длительность и токены",
 	} {
 		if !strings.Contains(html, fragment) {
 			t.Errorf("history page lacks %q", fragment)
 		}
+	}
+	if strings.Contains(html, `data-time=`) || !strings.Contains(html, "<time datetime=") {
+		t.Fatal("timestamp must appear in the table only")
 	}
 	script := httptest.NewRecorder()
 	mux.ServeHTTP(script, httptest.NewRequest(http.MethodGet, "/history-chart.js", nil))

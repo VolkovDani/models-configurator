@@ -270,6 +270,7 @@ def worker(connection, model, manifest, cache):
                 content = tokenizer.decode(sequences[0])
                 validate_content(content)
                 connection.send({'content': content, 'prompt_tokens': tokens,
+                                 'generated_tokens': len(sequences[0]),
                                  'max_new_tokens': limit, 'seconds': time.monotonic()-started})
             except Exception as error:
                 if isinstance(error, OutputRejected):
@@ -483,7 +484,8 @@ class Runtime:
             print(json.dumps({'device': 'NPU', 'profile': self.profile,
                               'prompt_tokens': response['prompt_tokens'], 'max_new_tokens': response['max_new_tokens'],
                               'seconds': response['seconds']}, ensure_ascii=False), flush=True)
-            return dict(self._health_locked(call_id), content=response['content'])
+            return dict(self._health_locked(call_id), content=response['content'],
+                        input_tokens=response['prompt_tokens'], output_tokens=response['generated_tokens'])
         except (EOFError, BrokenPipeError, ConnectionResetError):
             lifecycle_event('worker_exit', profile=self.profile, stage=stage, call_id=call_id)
             self._stop_worker(call_id=call_id)

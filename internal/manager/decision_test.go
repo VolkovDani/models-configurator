@@ -212,6 +212,9 @@ func TestOllamaDecision(t *testing.T) {
 			want := fmt.Sprintf(`{"model":%q,"digest":%q,"reason":%q}`, model.ID(), tc.digest, tc.reason)
 			if tc.reason == "" {
 				want = fmt.Sprintf(`{"model":%q,"digest":%q,"answer":%s,"usage":{"input_tokens":%d,"output_tokens":1}}`, model.ID(), tc.digest, validAnswer, tc.inputTokens)
+				assertHistoryUsage(t, recorded[0], fmt.Sprintf(`{"input_tokens":%d,"output_tokens":1}`, tc.inputTokens))
+			} else {
+				assertHistoryUsage(t, recorded[0], `{}`)
 			}
 			var gotJSON, wantJSON any
 			if json.Unmarshal(w.Body.Bytes(), &gotJSON) != nil || json.Unmarshal([]byte(want), &wantJSON) != nil || !reflect.DeepEqual(gotJSON, wantJSON) {

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/VolkovDani/models-configurator/internal/history"
 )
 
 func socketRuntime(t *testing.T, h http.HandlerFunc) string {
@@ -60,7 +62,7 @@ func TestNPUConfig(t *testing.T) {
 
 func TestNPUChatBinding(t *testing.T) {
 	digest := strings.Repeat("a", 64)
-	for _, scenario := range []string{"ok", "wrong-health", "wrong-device", "wrong-result", "cpu-result", "invalid-content", "runtime-error", "oversize", "missing-binding", "malformed-result"} {
+	for _, scenario := range []string{"ok", "older-worker", "wrong-health", "wrong-device", "wrong-result", "cpu-result", "invalid-content", "runtime-error", "oversize", "missing-binding", "malformed-result"} {
 		t.Run(scenario, func(t *testing.T) {
 			var calls int
 			base := socketRuntime(t, func(w http.ResponseWriter, r *http.Request) {
@@ -116,16 +118,32 @@ func TestNPUChatBinding(t *testing.T) {
 					if scenario == "invalid-content" {
 						content = "private runtime dump"
 					}
-					fmt.Fprintf(w, `{"profile":%q,"device":%q,"content":%q}`, profile, device, content)
+					if scenario == "older-worker" {
+						fmt.Fprintf(w, `{"profile":%q,"device":%q,"content":%q}`, profile, device, content)
+					} else {
+						fmt.Fprintf(w, `{"profile":%q,"device":%q,"content":%q,"input_tokens":18,"output_tokens":4}`, profile, device, content)
+					}
 				default:
 					t.Errorf("unexpected call %s %s", r.Method, r.URL.Path)
 				}
 			})
 			m := npuModel(base)
-			h := mustNew(t, m)
+			var recorded []history.Call
+			h, err := NewWithHistory(Config{Models: []Model{m}}, 1, func(call history.Call) { recorded = append(recorded, call) })
+			if err != nil {
+				t.Fatal(err)
+			}
 			body := strings.Replace(chatRequest(m.ID()), `"max_completion_tokens":42`, `"max_completion_tokens":1024`, 1)
 			w := perform(h, "POST", "/v1/chat/completions", body)
+			if len(recorded) != 1 {
+				t.Fatal("expected one history record")
+			}
 			if scenario == "ok" {
+				assertHistoryUsage(t, recorded[0], `{"input_tokens":18,"output_tokens":4}`)
+			} else {
+				assertHistoryUsage(t, recorded[0], `{}`)
+			}
+			if scenario == "ok" || scenario == "older-worker" {
 				var out struct {
 					Model   string
 					Choices []choice

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -25,7 +26,7 @@ func TestModelCallHistory(t *testing.T) {
 		case "GET /models":
 			fmt.Fprint(w, `{"data":[]}`)
 		case "POST /chat/completions":
-			fmt.Fprintf(w, `{"model":"deployment","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":%q}}]}`, output)
+			fmt.Fprintf(w, `{"model":"deployment","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":%q}}],"usage":{"prompt_tokens":14,"completion_tokens":7}}`, output)
 		case "POST /embeddings":
 			http.Error(w, "private-upstream-error", http.StatusServiceUnavailable)
 		default:
@@ -67,14 +68,16 @@ func TestModelCallHistory(t *testing.T) {
 	w := do("GET", base+"/history.json", "", 200)
 	var page struct {
 		Calls []struct {
-			ModelID    string    `json:"model_id"`
-			Profile    string    `json:"profile"`
-			Provider   string    `json:"provider"`
-			Operation  string    `json:"operation"`
-			StartedAt  time.Time `json:"started_at"`
-			DurationMS int64     `json:"duration_ms"`
-			Status     int       `json:"status"`
-			Outcome    string    `json:"outcome"`
+			ModelID      string    `json:"model_id"`
+			Profile      string    `json:"profile"`
+			Provider     string    `json:"provider"`
+			Operation    string    `json:"operation"`
+			StartedAt    time.Time `json:"started_at"`
+			DurationMS   int64     `json:"duration_ms"`
+			Status       int       `json:"status"`
+			Outcome      string    `json:"outcome"`
+			InputTokens  *int      `json:"input_tokens"`
+			OutputTokens *int      `json:"output_tokens"`
 		} `json:"calls"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
@@ -93,6 +96,10 @@ func TestModelCallHistory(t *testing.T) {
 			call.StartedAt.IsZero() || call.DurationMS < 0 {
 			t.Errorf("call %d: %+v", i, call)
 		}
+	}
+	if page.Calls[0].InputTokens != nil || page.Calls[0].OutputTokens != nil ||
+		!reflect.DeepEqual(page.Calls[1].InputTokens, new(14)) || !reflect.DeepEqual(page.Calls[1].OutputTokens, new(7)) {
+		t.Fatalf("wrong persisted token counts: %s", w.Body)
 	}
 	contents, err := os.ReadFile(path)
 	if err != nil {

@@ -98,10 +98,11 @@ class Handler(BaseHTTPRequestHandler):
             if not self.server.lock.acquire(blocking=False):
                 raise BadRequest(503)
             try:
-                rows = engine.encode(inputs, modes)
+                rows, input_tokens = engine.encode(inputs, modes)
             finally:
                 self.server.lock.release()
-            self.reply(200, {"profile": engine.profile, "device": engine.device, "data": rows})
+            self.reply(200, {"profile": engine.profile, "device": engine.device,
+                             "data": rows, "input_tokens": input_tokens})
         except InputLimitError:
             self.reply(413, {"error": "BGE input limit exceeded"})
         except BadRequest as error:

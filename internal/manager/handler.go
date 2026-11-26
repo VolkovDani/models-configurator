@@ -215,12 +215,27 @@ func (d *dispatcher) run(w http.ResponseWriter, r *http.Request, p provider, ope
 		return invoke(ctx)
 	}()
 	duration := time.Since(started)
+	var usage tokenUsage
+	switch reply := result.(type) {
+	case measuredResult:
+		result, usage = reply.body, reply.usage
+	case bgeResult:
+		usage = reply.usage
+	case decisionReply:
+		if reply.Usage != nil {
+			usage = tokenUsage{input: reply.Usage.InputTokens, output: reply.Usage.OutputTokens}
+		}
+	}
 	code, body := inferenceResponse(ctx, p, result, err)
 	if d.record != nil && operation != tokenCountOperation {
+		if err != nil {
+			usage = tokenUsage{}
+		}
 		d.record(history.Call{
 			ModelID: p.model.ID(), Profile: p.model.Name, Provider: p.model.Provider,
 			Operation: operation, StartedAt: started.UTC(), DurationMS: duration.Milliseconds(),
 			Status: code, Outcome: inferenceOutcome(ctx, code, result, err),
+			InputTokens: usage.input, OutputTokens: usage.output,
 		})
 	}
 	writeJSON(w, code, body)

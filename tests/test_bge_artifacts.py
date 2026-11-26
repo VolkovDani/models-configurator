@@ -83,6 +83,15 @@ class EngineTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 runner.encode(texts, modes)
 
+    def test_counts_tokenized_rows_once_for_multiple_representations(self):
+        from types import SimpleNamespace
+        runner = object.__new__(engine.Engine)
+        runner._lock = threading.Lock()
+        runner._tokenizer = SimpleNamespace(encode=lambda text: SimpleNamespace(ids=[0] + [3] * len(text) + [2]))
+        runner._encode_row = lambda row, modes, rich: {mode: len(row) for mode in modes}
+        self.assertEqual(runner.encode(['a', 'abc'], ['dense', 'sparse']),
+                         ([{'dense': 3, 'sparse': 3}, {'dense': 5, 'sparse': 5}], 8))
+
     @unittest.skipUnless(importlib.util.find_spec('numpy'), 'requires numpy')
     def test_order_dense_slicing_and_colbert_eos(self):
         import numpy as np
@@ -100,10 +109,10 @@ class EngineTests(unittest.TestCase):
             return {'dense': hidden[:, 0], 'sparse': hidden, 'colbert': hidden}
         runner._encoder = encoder
         runner._heads = heads
-        self.assertEqual(runner.encode(['4', '5'], ['colbert', 'sparse']), [
+        self.assertEqual(runner.encode(['4', '5'], ['colbert', 'sparse']), ([
             {'colbert': [[4.0], [2.0]], 'sparse': {'4': 4.0}},
-            {'colbert': [[5.0], [2.0]], 'sparse': {'5': 5.0}}])
-        self.assertEqual(runner.encode(['4'], ['dense']), [{'dense': [0.0]}])
+            {'colbert': [[5.0], [2.0]], 'sparse': {'5': 5.0}}], 6))
+        self.assertEqual(runner.encode(['4'], ['dense']), ([{'dense': [0.0]}], 3))
         self.assertEqual(seen, [(1, 3, 1), (1, 3, 1), (1, 1, 1)])
 
     @unittest.skipUnless(importlib.util.find_spec('openvino'), 'requires OpenVINO')

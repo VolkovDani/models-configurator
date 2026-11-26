@@ -129,6 +129,7 @@ func decodeBGERow(fields map[string]json.RawMessage, modes []string) (bgeRow, er
 type bgeResult struct {
 	Model string   `json:"model"`
 	Data  []bgeRow `json:"data"`
+	usage tokenUsage
 }
 
 func (p provider) bgeEncode(ctx context.Context, input, modes []string) (bgeResult, error) {
@@ -148,7 +149,8 @@ func (p provider) bgeEncode(ctx context.Context, input, modes []string) (bgeResu
 	}{pin, input, modes}
 	var resp struct {
 		bgeBinding
-		Data []map[string]json.RawMessage `json:"data"`
+		Data        []map[string]json.RawMessage `json:"data"`
+		InputTokens json.RawMessage              `json:"input_tokens"`
 	}
 	if err := p.requestBounded(ctx, http.MethodPost, "/v1/encode", body, &resp, 16<<20); err != nil {
 		return result, err
@@ -169,5 +171,5 @@ func (p provider) bgeEncode(ctx context.Context, input, modes []string) (bgeResu
 			return result, err
 		}
 	}
-	return bgeResult{Model: p.model.ID(), Data: rows}, nil
+	return bgeResult{Model: p.model.ID(), Data: rows, usage: tokenUsage{input: tokenCount(resp.InputTokens)}}, nil
 }

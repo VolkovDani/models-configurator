@@ -148,7 +148,8 @@ class Engine:
         if any(len(row) > (RICH_TOKENS if rich else DENSE_TOKENS) for row in rows):
             raise InputLimitError('token limit exceeded')
         with self._lock:
-            return [self._encode_row(row, modes, rich) for row in rows]
+            encoded = [self._encode_row(row, modes, rich) for row in rows]
+        return encoded, sum(map(len, rows))
 
     def _encode_row(self, row, modes, rich):
         import numpy as np
