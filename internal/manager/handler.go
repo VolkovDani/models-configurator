@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/VolkovDani/models-configurator/internal/history"
 )
 
 type inventoryItem struct {
@@ -24,6 +26,10 @@ func New(cfg Config) (http.Handler, error) {
 }
 
 func NewWithConcurrency(cfg Config, maxParallel int) (http.Handler, error) {
+	return NewWithHistory(cfg, maxParallel, nil)
+}
+
+func NewWithHistory(cfg Config, maxParallel int, record func(history.Call)) (http.Handler, error) {
 	if maxParallel < 1 {
 		return nil, errors.New("inference concurrency must be positive")
 	}
@@ -56,6 +62,7 @@ func NewWithConcurrency(cfg Config, maxParallel int) (http.Handler, error) {
 		models[id] = provider{model: m, upstream: target}
 	}
 	queue := newDispatcher(maxParallel)
+	queue.record = record
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/models", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"object": "list", "data": entries})
@@ -77,7 +84,7 @@ func NewWithConcurrency(cfg Config, maxParallel int) (http.Handler, error) {
 			fail(w, http.StatusBadRequest, "OpenVINO NPU requires strict JSON schema output and uses fixed sampling")
 			return
 		}
-		queue.run(w, r, p, func(ctx context.Context) (any, error) { return p.chat(ctx, in) })
+		queue.run(w, r, p, "chat", func(ctx context.Context) (any, error) { return p.chat(ctx, in) })
 	})
 	mux.HandleFunc("POST /v1/embeddings", func(w http.ResponseWriter, r *http.Request) {
 		var in embeddingRequest
@@ -96,7 +103,7 @@ func NewWithConcurrency(cfg Config, maxParallel int) (http.Handler, error) {
 			fail(w, 400, "BGE-M3 returns 1024 dimensions")
 			return
 		}
-		queue.run(w, r, p, func(ctx context.Context) (any, error) { return p.embed(ctx, in) })
+		queue.run(w, r, p, "embeddings", func(ctx context.Context) (any, error) { return p.embed(ctx, in) })
 	})
 	mux.HandleFunc("POST /v1/decisions", func(w http.ResponseWriter, r *http.Request) {
 		var in decisionRequest
@@ -115,7 +122,7 @@ func NewWithConcurrency(cfg Config, maxParallel int) (http.Handler, error) {
 			fail(w, http.StatusBadRequest, "decision digest does not match configured model")
 			return
 		}
-		queue.run(w, r, p, func(ctx context.Context) (any, error) { return p.decide(ctx, in) })
+		queue.run(w, r, p, "decision", func(ctx context.Context) (any, error) { return p.decide(ctx, in) })
 	})
 	mux.HandleFunc("POST /v1/bge-m3/encode", func(w http.ResponseWriter, r *http.Request) {
 		var in bgeRequest
@@ -134,7 +141,7 @@ func NewWithConcurrency(cfg Config, maxParallel int) (http.Handler, error) {
 			fail(w, 404, "unknown model for this operation")
 			return
 		}
-		queue.run(w, r, p, func(ctx context.Context) (any, error) { return p.bgeEncode(ctx, in.Input, in.Modes) })
+		queue.run(w, r, p, "bge_encode", func(ctx context.Context) (any, error) { return p.bgeEncode(ctx, in.Input, in.Modes) })
 	})
 	return mux, nil
 }
@@ -155,7 +162,7 @@ func lookupProvider(w http.ResponseWriter, models map[string]provider, id, role 
 	return p, true
 }
 
-func (d *dispatcher) run(w http.ResponseWriter, r *http.Request, p provider, invoke func(context.Context) (any, error)) {
+func (d *dispatcher) run(w http.ResponseWriter, r *http.Request, p provider, operation string, invoke func(context.Context) (any, error)) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
 	if err := d.acquire(ctx, p.socket); err != nil {
@@ -164,7 +171,8 @@ func (d *dispatcher) run(w http.ResponseWriter, r *http.Request, p provider, inv
 			fail(w, http.StatusTooManyRequests, errQueueFull.Error())
 		case errors.Is(err, context.DeadlineExceeded):
 			if p.model.Provider == NPUProvider {
-				writeNPUFailure(w, npuFailure("TIMEOUT"))
+				timeout := npuFailure("TIMEOUT")
+				writeJSON(w, timeout.status(), npuErrorBody(timeout))
 			} else {
 				fail(w, http.StatusGatewayTimeout, "inference request timed out")
 			}
@@ -173,35 +181,70 @@ func (d *dispatcher) run(w http.ResponseWriter, r *http.Request, p provider, inv
 		}
 		return
 	}
+	started := time.Now()
 	result, err := func() (any, error) {
 		defer d.release(p.socket)
 		return invoke(ctx)
 	}()
+	duration := time.Since(started)
+	code, body := inferenceResponse(ctx, p, result, err)
+	if d.record != nil {
+		d.record(history.Call{
+			ModelID: p.model.ID(), Profile: p.model.Name, Provider: p.model.Provider,
+			Operation: operation, StartedAt: started.UTC(), DurationMS: duration.Milliseconds(),
+			Status: code, Outcome: inferenceOutcome(ctx, code, result, err),
+		})
+	}
+	writeJSON(w, code, body)
+}
+
+func inferenceResponse(ctx context.Context, p provider, result any, err error) (int, any) {
 	var npuErr npuFailure
 	if p.model.Provider == NPUProvider && err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		err = npuFailure("TIMEOUT")
 	}
 	if errors.As(err, &npuErr) {
-		writeNPUFailure(w, npuErr)
-		return
+		return npuErr.status(), npuErrorBody(npuErr)
 	}
 	var workerStatus upstreamStatus
 	if p.model.Provider == BGEProvider && errors.As(err, &workerStatus) {
 		switch workerStatus {
 		case 409, 413, 503:
-			fail(w, int(workerStatus), http.StatusText(int(workerStatus)))
-			return
+			return int(workerStatus), errorBody(http.StatusText(int(workerStatus)))
 		}
 	}
 	if err != nil {
-		fail(w, 502, "model provider failed")
-		return
+		return http.StatusBadGateway, errorBody("model provider failed")
 	}
-	writeJSON(w, 200, result)
+	return http.StatusOK, result
 }
 
-func writeNPUFailure(w http.ResponseWriter, err npuFailure) {
-	writeJSON(w, err.status(), map[string]any{"error": map[string]string{"message": "model provider failed", "code": err.Error()}})
+func inferenceOutcome(ctx context.Context, code int, result any, err error) string {
+	if code == http.StatusGatewayTimeout {
+		return "timed_out"
+	}
+	if err != nil {
+		switch ctx.Err() {
+		case context.DeadlineExceeded:
+			return "timed_out"
+		case context.Canceled:
+			return "canceled"
+		default:
+			return "failed"
+		}
+	}
+	if reply, ok := result.(decisionReply); ok && reply.Reason != "" {
+		return "refused"
+	}
+	return "succeeded"
+}
+
+func npuErrorBody(err npuFailure) map[string]map[string]string {
+	return map[string]map[string]string{"error": {"message": "model provider failed", "code": err.Error()}}
+}
+
+func errorBody(message string) map[string]map[string]string {
+	return map[string]map[string]string{"error": {"message": message}}
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -211,7 +254,7 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 }
 
 func fail(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]any{"error": map[string]string{"message": message}})
+	writeJSON(w, status, errorBody(message))
 }
 
 func readInput(w http.ResponseWriter, r *http.Request, v any) bool {

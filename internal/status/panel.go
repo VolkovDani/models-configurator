@@ -83,15 +83,12 @@ func (p *panel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(f.result)
 		return
 	}
-	lang := r.URL.Query().Get("lang")
-	if lang != "ru" {
-		lang = "en"
-	}
+	words := localize(r)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Content-Language", lang)
+	w.Header().Set("Content-Language", words.Lang)
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
 	w.Header().Set("Referrer-Policy", "no-referrer")
-	page.Execute(w, view{snapshot: f.result, Lang: lang, Words: translations[lang]})
+	page.Execute(w, view{snapshot: f.result, locale: words})
 }
 
 func collect(ctx context.Context, cfg manager.Config) snapshot {
@@ -130,11 +127,9 @@ func collect(ctx context.Context, cfg manager.Config) snapshot {
 
 type view struct {
 	snapshot
-	Lang  string
-	Words map[string]string
+	locale
 }
 
-func (v view) Label(code string) string { return v.Words[code] }
 func (v view) Flag(value *bool) string {
 	if value == nil {
 		return v.Label("unknown")

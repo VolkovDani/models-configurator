@@ -3,12 +3,14 @@ package main
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
 	"time"
 
+	"github.com/VolkovDani/models-configurator/internal/history"
 	"github.com/VolkovDani/models-configurator/internal/manager"
 	"github.com/VolkovDani/models-configurator/internal/status"
 )
@@ -55,12 +57,25 @@ func service(cfg manager.Config) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	api, err := manager.NewWithConcurrency(cfg, limit)
+	path := os.Getenv("MODELS_HISTORY_PATH")
+	if path == "" {
+		path = "logs/model-history.jsonl"
+	}
+	calls, err := history.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open model call history: %w", err)
+	}
+	api, err := manager.NewWithHistory(cfg, limit, func(call history.Call) {
+		if err := calls.Record(call); err != nil {
+			log.Printf("Record model call history: %v", err)
+		}
+	})
 	if err != nil {
 		return nil, err
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/v1/", api)
+	status.RegisterHistory(mux, calls)
 	mux.Handle("/", status.New(cfg))
 	return localAccess(mux), nil
 }

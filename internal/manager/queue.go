@@ -5,6 +5,8 @@ import (
 	"errors"
 	"slices"
 	"sync"
+
+	"github.com/VolkovDani/models-configurator/internal/history"
 )
 
 const maxWaiting = 128
@@ -17,6 +19,7 @@ type waiter struct {
 }
 
 type dispatcher struct {
+	record      func(history.Call)
 	mu          sync.Mutex
 	maxParallel int
 	active      int

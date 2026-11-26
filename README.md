@@ -61,6 +61,16 @@ curl -sS http://127.0.0.1:8317/v1/embeddings -H 'Content-Type: application/json'
 
 [Run local decision models](docs/decision-models.md) with System One D3 or Laya.
 
+## Model call history
+
+Open **Model call history** from the status panel or visit http://127.0.0.1:8317/history. The page shows when each call started (UTC), the pinned model profile and provider, the operation, its outcome and HTTP status, and the time spent executing the call, excluding queue wait. Scroll down or use **Load more** for earlier calls.
+
+The manager records chat, embedding, decision, and BGE-M3 requests once they leave the queue and reach the adapter. Refusals and failures appear in history. Provider probes, invalid requests, and requests rejected or canceled while waiting do not appear. The history contains operational metadata only. It stores no prompts, outputs, third-party error text, credentials, caller identifiers, or token counts. Like the rest of the local service, the history is shared with applications that have trusted network access to the manager.
+
+For programmatic access, use `GET /history.json`. It returns up to 50 calls in descending record order in `calls`. If the response contains `next_before`, pass it as `?before=<next_before>` to get older calls.
+
+The most recent 10,000 records are available across restarts. Compose stores them in the `model_history` volume, which survives container replacement. On the host, the default is `logs/model-history.jsonl` relative to the working directory. Set `MODELS_HISTORY_PATH` to use a different file. Each manager process needs its own file. After startup, write failures are logged and inference responses remain available.
+
 ## Concurrent requests
 
 The manager runs one inference request at a time by default. Chat, embedding and decision requests share the limit. To allow two independent runtimes to work at once, set the following in the manager's private `.env` and apply it with `docker compose up -d models-configurator`. For a native launch, export the variable before starting the server.

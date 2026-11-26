@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="{{.Lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Label "history_title"}} · Models Configurator</title>
+<script src="/history.js" defer></script>
+<style>
+:root{font-family:Inter,system-ui,sans-serif;color:#18352f;background:#f5f7f3}
+*{box-sizing:border-box}
+body{max-width:76rem;margin:auto;padding:0 clamp(1rem,5vw,4rem) 4rem}
+header,.toolbar{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+header{padding:1.3rem 0;border-bottom:1px solid #cbd8cf}
+nav{display:flex;gap:1rem;flex-wrap:wrap}
+a{color:#13594b;text-underline-offset:.24em}
+:focus-visible{outline:3px solid #238275;outline-offset:3px}
+h1{font-size:clamp(2.2rem,5vw,4rem);letter-spacing:-.05em;line-height:1.1;margin:2.7rem 0 1rem}
+.toolbar{margin:1rem 0 1.5rem}
+.table-wrap{overflow:auto;border:1px solid #cbd8cf;border-radius:.7rem;background:white}
+table{border-collapse:collapse;width:100%;text-align:left}
+th,td{padding:.8rem 1rem;vertical-align:top}
+thead th{background:#eaf0eb;color:#445b52;font-size:.9rem}
+tbody tr+tr{border-top:1px solid #e1e7e1}
+tbody th{font-weight:600;min-width:10rem;overflow-wrap:anywhere}
+small,summary{display:block;color:#445b52;margin-top:.25rem;font-weight:400}
+summary{display:list-item;cursor:pointer}
+code{display:block;max-width:25rem;margin-top:.4rem;font-weight:400;overflow-wrap:anywhere}
+time,.number{font-variant-numeric:tabular-nums;white-space:nowrap}
+.failed,.timed_out,.canceled,.refused{color:#744013}
+button{font:inherit;color:white;background:#13594b;border:0;border-radius:.4rem;padding:.65rem 1rem;cursor:pointer}
+button[aria-disabled=true]{opacity:.65;cursor:default}
+form{margin-top:1rem}
+</style>
+</head>
+<body>
+<header>
+<strong>Models Configurator</strong>
+<nav aria-label="{{.Label "languages"}}">
+<a href="/history?lang=en" lang="en" {{if eq .Lang "en"}}aria-current="page"{{end}}>English</a>
+<a href="/history?lang=ru" lang="ru" {{if eq .Lang "ru"}}aria-current="page"{{end}}>Русский</a>
+</nav>
+</header>
+<main>
+<h1>{{.Label "history_title"}}</h1>
+<div class="toolbar">
+<a href="/?lang={{.Lang}}">{{.Label "title"}}</a>
+<a href="/history?lang={{.Lang}}">{{if .OlderPage}}{{.Label "history_latest"}}{{else}}{{.Label "refresh"}}{{end}}</a>
+</div>
+{{if .Calls}}
+<div class="table-wrap" role="region" aria-label="{{.Label "history_title"}}" tabindex="0">
+<table>
+<thead><tr>
+<th scope="col">{{.Label "history_time"}}</th>
+<th scope="col">{{.Label "history_profile"}}</th>
+<th scope="col">{{.Label "history_operation"}}</th>
+<th scope="col">{{.Label "history_outcome"}}</th>
+<th scope="col">{{.Label "history_duration"}}</th>
+</tr></thead>
+<tbody id="calls">
+{{range .Calls}}
+<tr>
+<td><time datetime="{{.StartedAt.Format "2006-01-02T15:04:05.999999999Z07:00"}}">{{.StartedAt.Format "2006-01-02 15:04:05"}}</time></td>
+<th scope="row">{{.Profile}}<small>{{$.Label .Provider}}</small><details><summary>{{$.Label "id"}}</summary><code>{{.ModelID}}</code></details></th>
+<td>{{$.Label .Operation}}</td>
+<td class="{{.Outcome}}">{{$.Label .Outcome}} <small>HTTP {{.Status}}</small></td>
+<td class="number">{{.DurationMS}} {{$.Label "history_ms"}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{else}}
+<p>{{if .OlderPage}}{{.Label "history_end"}}{{else}}{{.Label "history_empty"}}{{end}}</p>
+{{end}}
+{{if .NextBefore}}
+<form id="more-calls" action="/history" method="get" data-error="{{.Label "history_load_error"}}" data-loaded="{{.Label "history_loaded"}}" data-end="{{.Label "history_end"}}">
+<input type="hidden" name="lang" value="{{.Lang}}">
+<input type="hidden" name="before" value="{{.NextBefore}}">
+<button type="submit">{{.Label "history_more"}}</button>
+</form>
+<p id="history-feedback" role="status"></p>
+{{end}}
+</main>
+</body>
+</html>

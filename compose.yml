@@ -11,10 +11,12 @@ services:
         read_only: true
         bind:
           create_host_path: false
+      - model_history:/var/lib/models-configurator
     env_file:
       - path: ./providers.env
         required: false
     environment:
+      MODELS_HISTORY_PATH: /var/lib/models-configurator/history.jsonl
       MODELS_MAX_PARALLEL_REQUESTS: ${MODELS_MAX_PARALLEL_REQUESTS-1}
     networks: [clients, runtime]
   ollama:
@@ -31,4 +33,5 @@ networks:
     name: ${MODELS_NETWORK:-models-configurator-clients}
   runtime: {}
 volumes:
+  model_history: {}
   ollama_data: {}
