@@ -17,6 +17,7 @@ import (
 const NPUProvider = "openvino-npu"
 
 const npuCallHeader = "X-NPU-Call-ID"
+const npuMaxRequestBytes = 65536 // Mirrors the private runtime's transport limit.
 
 func newNPUCallID() string {
 	var id [16]byte
@@ -52,7 +53,7 @@ func parseNPUFailure(status int, body io.Reader) error {
 	if err == nil && decodeStrict(raw, &response) == nil && response.Code.status() == status {
 		return response.Code
 	}
-	return errors.New("NPU runtime request failed")
+	return upstreamStatus(status)
 }
 
 func socketPath(base string) (string, error) {
@@ -129,21 +130,35 @@ func NPUStatus(ctx context.Context, base string) (profile string, loaded bool, e
 	return status.Profile, *status.Loaded, nil
 }
 
-func (p provider) npuChat(ctx context.Context, in chatRequestBody) (any, error) {
-	digest := strings.TrimPrefix(p.model.Digest, "sha256:")
+func (p provider) verifyNPUProfile(ctx context.Context, digest string) error {
 	var health npuBinding
 	if err := p.requestBounded(ctx, http.MethodGet, "/health", nil, &health, 4096); err != nil {
+		return err
+	}
+	return health.check(digest)
+}
+
+type npuChatRequest struct {
+	Profile             string          `json:"profile"`
+	Messages            []message       `json:"messages"`
+	Schema              json.RawMessage `json:"schema"`
+	MaxCompletionTokens *int            `json:"max_completion_tokens,omitempty"`
+}
+
+func (p provider) npuChatRequest(in chatRequestBody) npuChatRequest {
+	return npuChatRequest{
+		Profile:             strings.TrimPrefix(p.model.Digest, "sha256:"),
+		Messages:            in.Messages,
+		Schema:              in.ResponseFormat.JSONSchema.Schema,
+		MaxCompletionTokens: in.MaxCompletionTokens,
+	}
+}
+
+func (p provider) npuChat(ctx context.Context, in chatRequestBody) (any, error) {
+	body := p.npuChatRequest(in)
+	if err := p.verifyNPUProfile(ctx, body.Profile); err != nil {
 		return nil, err
 	}
-	if err := health.check(digest); err != nil {
-		return nil, err
-	}
-	body := struct {
-		Profile             string          `json:"profile"`
-		Messages            []message       `json:"messages"`
-		Schema              json.RawMessage `json:"schema"`
-		MaxCompletionTokens *int            `json:"max_completion_tokens,omitempty"`
-	}{digest, in.Messages, in.ResponseFormat.JSONSchema.Schema, in.MaxCompletionTokens}
 	var resp struct {
 		npuBinding
 		Content string `json:"content"`
@@ -151,11 +166,44 @@ func (p provider) npuChat(ctx context.Context, in chatRequestBody) (any, error) 
 	if err := p.request(ctx, http.MethodPost, "/v1/generate", body, &resp); err != nil {
 		return nil, err
 	}
-	if err := resp.check(digest); err != nil {
+	if err := resp.check(body.Profile); err != nil {
 		return nil, err
 	}
 	if !json.Valid([]byte(resp.Content)) {
 		return nil, npuFailure("INVALID_OUTPUT")
 	}
 	return chatResult(in.Model, "stop", outputMessage{Role: "assistant", Content: &resp.Content})
+}
+
+func (p provider) npuTokenCount(ctx context.Context, in chatRequestBody) (any, error) {
+	request := p.npuChatRequest(in)
+	body, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > npuMaxRequestBytes {
+		return nil, errTokenCountRequestTooLarge
+	}
+	if err := p.verifyNPUProfile(ctx, request.Profile); err != nil {
+		return nil, err
+	}
+	var reply struct {
+		npuBinding
+		chatTokenBudget
+	}
+	if err := p.requestJSONBounded(ctx, http.MethodPost, "/v1/count-tokens", body, &reply, 4096); err != nil {
+		if err == upstreamStatus(http.StatusNotFound) {
+			return nil, errTokenCountUnsupported
+		}
+		return nil, err
+	}
+	if err := reply.check(request.Profile); err != nil {
+		return nil, err
+	}
+	budget := reply.chatTokenBudget
+	if budget.InputTokens < 1 || budget.MaxInputTokens < 1 || budget.MaxCompletionTokens < 1 ||
+		(in.MaxCompletionTokens != nil && budget.MaxCompletionTokens > *in.MaxCompletionTokens) {
+		return nil, npuFailure("INVALID_OUTPUT")
+	}
+	return chatTokenCount{Model: in.Model, chatTokenBudget: budget, Exact: true}, nil
 }

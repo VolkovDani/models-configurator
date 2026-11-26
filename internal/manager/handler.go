@@ -15,6 +15,7 @@ import (
 
 const (
 	chatOperation       = "chat"
+	tokenCountOperation = "chat_token_count"
 	embeddingsOperation = "embeddings"
 	decisionOperation   = "decision"
 	bgeOperation        = "bge_encode"
@@ -90,25 +91,29 @@ func NewWithHistory(cfg Config, maxParallel int, record func(history.Call)) (htt
 	mux.HandleFunc("GET /v1/models", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"object": "list", "data": entries})
 	})
-	mux.HandleFunc(InferenceEndpoint(chatOperation), func(w http.ResponseWriter, r *http.Request) {
-		var in chatRequestBody
-		if !readInput(w, r, &in) {
-			return
+	serveChat := func(operation string, invoke func(provider, context.Context, chatRequestBody) (any, error)) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			var in chatRequestBody
+			if !readInput(w, r, &in) {
+				return
+			}
+			if !in.valid() {
+				fail(w, http.StatusBadRequest, "invalid chat request")
+				return
+			}
+			p, ok := lookupProvider(w, models, in.Model, "chat")
+			if !ok {
+				return
+			}
+			if p.model.Provider == NPUProvider && (in.ResponseFormat == nil || in.TopP != nil || in.Temperature != nil) {
+				fail(w, http.StatusBadRequest, "OpenVINO NPU requires strict JSON schema output and uses fixed sampling")
+				return
+			}
+			queue.run(w, r, p, operation, func(ctx context.Context) (any, error) { return invoke(p, ctx, in) })
 		}
-		if !in.valid() {
-			fail(w, 400, "invalid chat request")
-			return
-		}
-		p, ok := lookupProvider(w, models, in.Model, "chat")
-		if !ok {
-			return
-		}
-		if p.model.Provider == NPUProvider && (in.ResponseFormat == nil || in.TopP != nil || in.Temperature != nil) {
-			fail(w, http.StatusBadRequest, "OpenVINO NPU requires strict JSON schema output and uses fixed sampling")
-			return
-		}
-		queue.run(w, r, p, chatOperation, func(ctx context.Context) (any, error) { return p.chat(ctx, in) })
-	})
+	}
+	mux.HandleFunc(InferenceEndpoint(chatOperation), serveChat(chatOperation, provider.chat))
+	mux.HandleFunc("POST /v1/chat/token-count", serveChat(tokenCountOperation, provider.chatTokenCount))
 	mux.HandleFunc(InferenceEndpoint(embeddingsOperation), func(w http.ResponseWriter, r *http.Request) {
 		var in embeddingRequest
 		if !readInput(w, r, &in) {
@@ -211,7 +216,7 @@ func (d *dispatcher) run(w http.ResponseWriter, r *http.Request, p provider, ope
 	}()
 	duration := time.Since(started)
 	code, body := inferenceResponse(ctx, p, result, err)
-	if d.record != nil {
+	if d.record != nil && operation != tokenCountOperation {
 		d.record(history.Call{
 			ModelID: p.model.ID(), Profile: p.model.Name, Provider: p.model.Provider,
 			Operation: operation, StartedAt: started.UTC(), DurationMS: duration.Milliseconds(),
@@ -228,6 +233,12 @@ func inferenceResponse(ctx context.Context, p provider, result any, err error) (
 	}
 	if errors.As(err, &npuErr) {
 		return npuErr.status(), npuErrorBody(npuErr)
+	}
+	switch err {
+	case errTokenCountUnsupported:
+		return http.StatusNotImplemented, codedErrorBody("token counting is unavailable for this profile or token budget", errTokenCountUnsupported)
+	case errTokenCountRequestTooLarge:
+		return http.StatusRequestEntityTooLarge, codedErrorBody("token count request exceeds the runtime size limit", errTokenCountRequestTooLarge)
 	}
 	var workerStatus upstreamStatus
 	if p.model.Provider == BGEProvider && errors.As(err, &workerStatus) {
@@ -263,7 +274,11 @@ func inferenceOutcome(ctx context.Context, code int, result any, err error) stri
 }
 
 func npuErrorBody(err npuFailure) map[string]map[string]string {
-	return map[string]map[string]string{"error": {"message": "model provider failed", "code": err.Error()}}
+	return codedErrorBody("model provider failed", err)
+}
+
+func codedErrorBody(message string, code error) map[string]map[string]string {
+	return map[string]map[string]string{"error": {"message": message, "code": code.Error()}}
 }
 
 func errorBody(message string) map[string]map[string]string {

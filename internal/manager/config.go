@@ -36,7 +36,7 @@ type Model struct {
 func (m Model) ID() string {
 	fields := []any{"models-configurator-v1", m.Provider, strings.TrimRight(m.BaseURL, "/"), m.Model, m.Role, strings.TrimPrefix(m.Digest, "sha256:"), m.Revision}
 	if m.OllamaChat != nil {
-		fields = append(fields, m.OllamaChat.options())
+		fields = append(fields, m.OllamaChat.options(nil))
 	}
 	identity, _ := json.Marshal(fields)
 	digest := sha256.Sum256(identity)

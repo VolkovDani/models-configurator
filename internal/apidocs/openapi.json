@@ -3,7 +3,7 @@
   "info": {
     "title": "Models Configurator API",
     "version": "v1",
-    "description": "HTTP API for trusted applications on the same host or attached to the `models-configurator-clients` Docker network. Start with GET /v1/models and use its full profile ID as `model` in inference requests. Inference requests share a queue. The two-minute inference deadline includes time spent waiting in the queue."
+    "description": "HTTP API for trusted applications on the same host or attached to the `models-configurator-clients` Docker network. Start with GET /v1/models and use its full profile ID as `model` in inference requests. Inference and chat token counting share a queue. The two-minute request deadline includes time spent waiting in the queue."
   },
   "servers": [{ "url": "/" }],
   "tags": [
@@ -110,6 +110,68 @@
           },
           "413": { "$ref": "#/components/responses/BodyTooLarge" },
           "429": { "$ref": "#/components/responses/QueueFull" },
+          "502": { "$ref": "#/components/responses/ProviderFailure" },
+          "503": {
+            "description": "OpenVINO NPU unavailable. Possible error codes are NPU_UNAVAILABLE, NPU_WORKER_EXIT, and NPU_RECOVERY_FAILED.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "504": { "$ref": "#/components/responses/DeadlineExceeded" }
+        }
+      }
+    },
+    "/v1/chat/token-count": {
+      "post": {
+        "tags": ["Inference"],
+        "operationId": "countChatTokens",
+        "summary": "Count chat input tokens and get the applicable limits",
+        "description": "Submit the same body as for a non-streaming chat completion. OpenVINO NPU requires a strict JSON Schema and fixed sampling. It uses its pinned chat template and tokenizer to count input locally and returns the manifest prompt limit and the capped completion limit. Ollama profiles with an explicit context limit return a conservative UTF-8 byte estimate including schema and allowances for chat formatting. The Ollama input budget is the configured context minus the requested or default completion limit. Counting never generates a completion or sends input to external providers.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ChatRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Token count or estimate and its applicable budgets. Input can exceed the reported input budget.",
+            "headers": {
+              "X-NPU-Call-ID": {
+                "description": "Present for an OpenVINO NPU profile. Correlates the request with worker logs.",
+                "schema": { "type": "string", "pattern": "^[a-f0-9]{32}$" }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ChatTokenCount" },
+                "example": {
+                  "model": "<chat-profile-id>",
+                  "input_tokens": 2100,
+                  "max_input_tokens": 2048,
+                  "max_completion_tokens": 512,
+                  "exact": true
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/InvalidRequest" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/UnknownProfile" },
+          "408": { "$ref": "#/components/responses/Canceled" },
+          "409": {
+            "description": "OpenVINO NPU profile changed. Error code PROFILE_CHANGED.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "413": {
+            "description": "Request exceeds the manager body limit or the serialized OpenVINO NPU socket request exceeds 65,536 bytes. The latter returns error code TOKEN_COUNT_REQUEST_TOO_LARGE.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "429": { "$ref": "#/components/responses/QueueFull" },
+          "501": {
+            "description": "Token counting is unavailable for the requested profile or budget. Error code TOKEN_COUNT_UNSUPPORTED.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
           "502": { "$ref": "#/components/responses/ProviderFailure" },
           "503": {
             "description": "OpenVINO NPU unavailable. Possible error codes are NPU_UNAVAILABLE, NPU_WORKER_EXIT, and NPU_RECOVERY_FAILED.",
@@ -422,6 +484,17 @@
               }
             }
           }
+        }
+      },
+      "ChatTokenCount": {
+        "type": "object",
+        "required": ["model", "input_tokens", "max_input_tokens", "max_completion_tokens", "exact"],
+        "properties": {
+          "model": { "$ref": "#/components/schemas/ProfileId" },
+          "input_tokens": { "type": "integer", "minimum": 1 },
+          "max_input_tokens": { "type": "integer", "minimum": 1 },
+          "max_completion_tokens": { "type": "integer", "minimum": 1 },
+          "exact": { "type": "boolean", "description": "True for a tokenizer count and false for an estimate." }
         }
       },
       "EmbeddingText": {

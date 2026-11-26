@@ -59,6 +59,7 @@ Read an immutable profile ID from `GET /v1/models` and send it in the request's 
 | --- | --- |
 | `GET /v1/models` | List configured profiles without contacting upstreams. |
 | `POST /v1/chat/completions` | Non-streaming messages and optional strict JSON Schema output. |
+| `POST /v1/chat/token-count` | Count or estimate chat input tokens and return the applicable input and completion budgets before generation. |
 | `POST /v1/embeddings` | Float vectors for input text, with the selected profile's dimension. Project Creator needs 1024 components. |
 | `GET /status`, `GET /` | Inspect provider metadata, availability and last check. The status page never runs inference. Ollama installation and current loading are reported separately. |
 
@@ -71,13 +72,21 @@ curl -sS http://127.0.0.1:8317/v1/embeddings -H 'Content-Type: application/json'
 
 [Run local decision models](docs/decision-models.md) with System One D3 or Laya.
 
+### Check the chat token budget
+
+Send the intended completion body to `POST /v1/chat/token-count`, including the full profile ID, messages and any output schema or completion cap. The response contains `model`, `input_tokens`, `max_input_tokens`, `max_completion_tokens` and `exact`. A successful response can report input above the budget. Clients can reduce the context and count again before generating.
+
+- OpenVINO NPU uses the pinned chat template and tokenizer locally and returns `exact: true`. Supply a strict JSON Schema and omit sampling overrides. The input limit comes from the manifest and the output limit is capped by the manifest. [NPU limits and diagnostics](docs/npu.md#api-and-diagnostics)
+- Ollama with an explicit `ollama_chat.context_tokens` returns `exact: false` using message and optional schema bytes with allowances for chat formatting. The configured context minus the requested or default completion limit is the input budget. The estimate is conservative for typical templates and actual model limits still apply during generation.
+- Ollama without an explicit context or sufficient room for the output reserve and OpenAI-compatible profiles return HTTP 501 with `TOKEN_COUNT_UNSUPPORTED`. Use a client-side fallback when counting is unavailable. Token counting runs without generating a completion or contacting external providers.
+
 ## Model call history
 
 Open **Model call history** from the status panel or visit http://127.0.0.1:8317/history. The page shows when each call started (UTC), the pinned model profile and provider, the operation, its outcome and HTTP status, and the time spent executing the call, excluding queue wait. Scroll down or use **Load more** for earlier calls.
 
 The **Call durations** chart appears above the table when history has calls. Select a usage type to compare model profiles for that operation. Each point shows the start time (UTC) and duration (ms) of one call. The legend identifies the model profiles and shows the HTTP method and path. Loading earlier calls extends the chart. The chart runs locally from an embedded Recharts bundle.
 
-The manager records chat, embedding, decision, and BGE-M3 requests once they leave the queue and reach the adapter. Refusals and failures appear in history. Provider probes, invalid requests, and requests rejected or canceled while waiting do not appear. The history contains operational metadata only. It stores no prompts, outputs, third-party error text, credentials, caller identifiers, or token counts. Like the rest of the local service, the history is shared with applications that have trusted network access to the manager.
+The manager records chat, embedding, decision, and BGE-M3 requests once they leave the queue and reach the adapter. Refusals and failures appear in history. Token count requests, provider probes, invalid requests, and requests rejected or canceled while waiting do not appear. The history contains operational metadata only. It stores no prompts, outputs, third-party error text, credentials, caller identifiers, or token counts. Like the rest of the local service, the history is shared with applications that have trusted network access to the manager.
 
 For programmatic access, use `GET /history.json`. It returns up to 50 calls in descending record order in `calls`. If the response contains `next_before`, pass it as `?before=<next_before>` to get older calls.
 
@@ -85,13 +94,13 @@ The most recent 10,000 records are available across restarts. Compose stores the
 
 ## Concurrent requests
 
-The manager runs one inference request at a time by default. Chat, embedding and decision requests share the limit. To allow two independent runtimes to work at once, set the following in the manager's private `.env` and apply it with `docker compose up -d models-configurator`. For a native launch, export the variable before starting the server.
+The manager runs one inference or token count request at a time by default. To allow two independent runtimes to work at once, set the following in the manager's private `.env` and apply it with `docker compose up -d models-configurator`. For a native launch, export the variable before starting the server.
 
 ```dotenv
 MODELS_MAX_PARALLEL_REQUESTS=2
 ```
 
-Choose a positive integer that your hardware and providers can sustain. Each OpenVINO runtime socket serves one generation at a time even if several profiles point to it. A request for a free runtime can proceed while another waits for its socket. Up to 128 requests may wait in each manager process. A full queue returns HTTP 429. Waiting counts toward the two-minute request deadline, and disconnecting while queued removes the request.
+Choose a positive integer that your hardware and providers can sustain. Each OpenVINO runtime socket serves one request at a time even if several profiles point to it. A request for a free runtime can proceed while another waits for its socket. Up to 128 requests may wait in each manager process. A full queue returns HTTP 429. Waiting counts toward the two-minute request deadline, and disconnecting while queued removes the request.
 
 ## Intel NPU
 

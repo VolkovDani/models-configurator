@@ -116,27 +116,29 @@ const (
 	ollamaDefaultCompletion = 1024
 )
 
-func (s *OllamaChatSettings) tokenLimits() (context, completion int) {
+func (s *OllamaChatSettings) tokenLimits(completionOverride *int) (context, completion int) {
 	context, completion = ollamaDefaultContext, ollamaDefaultCompletion
 	if s != nil && s.ContextTokens != nil {
 		context = *s.ContextTokens
 	}
-	if s != nil && s.CompletionTokens != nil {
+	if completionOverride != nil {
+		completion = *completionOverride
+	} else if s != nil && s.CompletionTokens != nil {
 		completion = *s.CompletionTokens
 	}
 	return
 }
 
 func (s *OllamaChatSettings) valid() bool {
-	context, completion := s.tokenLimits()
+	context, completion := s.tokenLimits(nil)
 	return context >= 1 && context <= 32768 &&
 		completion >= 1 && completion <= 16384 && completion < context &&
 		(s.Temperature == nil || *s.Temperature >= 0 && *s.Temperature <= 2) &&
 		(s.TopP == nil || *s.TopP > 0 && *s.TopP <= 1)
 }
 
-func (s *OllamaChatSettings) options() map[string]any {
-	context, completion := s.tokenLimits()
+func (s *OllamaChatSettings) options(completionOverride *int) map[string]any {
+	context, completion := s.tokenLimits(completionOverride)
 	options := map[string]any{"num_ctx": context, "temperature": 0, "num_predict": completion}
 	if s == nil {
 		return options
