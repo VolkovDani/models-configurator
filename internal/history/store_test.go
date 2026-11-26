@@ -97,3 +97,37 @@ func callIDs(page Page) []uint64 {
 	}
 	return ids
 }
+
+func TestStorePreservesOptionalCountsAcrossReload(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.jsonl")
+	if err := os.WriteFile(path, []byte("{\"id\":1}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := open(path, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, output := 12, 0
+	if err := store.Record(Call{InputTokens: &input, OutputTokens: &output}); err != nil {
+		t.Fatal(err)
+	}
+	input, output = 14, 2
+
+	check := func(store *Store) {
+		t.Helper()
+		page := store.List(0, 2)
+		if len(page.Calls) != 2 || !reflect.DeepEqual(page.Calls[0].InputTokens, new(12)) ||
+			!reflect.DeepEqual(page.Calls[0].OutputTokens, new(0)) ||
+			page.Calls[1].InputTokens != nil || page.Calls[1].OutputTokens != nil {
+			t.Fatalf("unexpected usage after reading history: %+v", page.Calls)
+		}
+		*page.Calls[0].OutputTokens = 9
+	}
+	check(store)
+	check(store)
+	store, err = open(path, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(store)
+}

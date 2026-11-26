@@ -21,7 +21,7 @@ class FakeEngine:
 
     def encode(self, inputs, modes):
         self.calls.append((inputs, modes))
-        return [{mode: [] for mode in modes} for _ in inputs]
+        return [{mode: [] for mode in modes} for _ in inputs], 7
 
 
 class ServerTest(unittest.TestCase):
@@ -58,7 +58,7 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.request("GET", "/status"), (200, {**status, "loaded": True}))
         modes = ["colbert", "sparse"]
         self.assertEqual(self.request(body=self.payload(modes=modes)),
-                         (200, {**status, "data": [{"colbert": [], "sparse": []}]}))
+                         (200, {**status, "data": [{"colbert": [], "sparse": []}], "input_tokens": 7}))
         self.assertEqual(self.engine.calls, [(["local text"], modes)])
 
     def test_reject_invalid_before_inference(self):

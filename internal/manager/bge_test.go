@@ -146,7 +146,7 @@ func TestBGEWorkerContract(t *testing.T) {
 					if tc.scenario == "missing-row" {
 						rows = nil
 					}
-					json.NewEncoder(w).Encode(map[string]any{"profile": profile, "device": device, "data": rows})
+					json.NewEncoder(w).Encode(map[string]any{"profile": profile, "device": device, "data": rows, "input_tokens": 11})
 				default:
 					t.Errorf("unexpected worker request %s", r.URL.Path)
 				}
@@ -174,6 +174,7 @@ func TestBGEWorkerContract(t *testing.T) {
 				t.Fatalf("status %d calls %d", w.Code, calls)
 			}
 			if tc.status == 200 {
+				assertHistoryUsage(t, recorded[0], `{"input_tokens":11}`)
 				var result struct {
 					Model string
 					Data  []map[string]json.RawMessage

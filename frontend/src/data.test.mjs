@@ -1,55 +1,59 @@
-import { deepStrictEqual, strictEqual } from 'node:assert';
+import { deepStrictEqual } from 'node:assert';
 import { test } from 'node:test';
-import { groupCalls, timeDomain } from './data.ts';
+import { groupCalls, readCalls, seriesForMetric } from './data.ts';
 
-const call = (modelId, profile, operation, started, duration) => ({
+const call = (modelId, profile, operation, duration, inputTokens, outputTokens) => ({
   modelId,
   profile,
   operation,
-  label: operation === 'embeddings' ? 'Векторизация' : 'Кодирование BGE',
+  label: operation === 'embeddings' ? 'Векторизация' : 'Генерация',
   endpoint: `POST /v1/${operation}`,
-  started,
   duration,
+  inputTokens,
+  outputTokens,
 });
 
-test('groups recorded operations into shared charts with separate pinned profiles', () => {
-  const operations = groupCalls([
-    call('slow.rev', 'slow', 'embeddings', 3000, 30),
-    call('slow.rev', 'slow', 'bge_encode', 4000, 0),
-    call('fast.rev', 'fast', 'embeddings', 2000, 40),
-    call('slow.rev', 'slow', 'embeddings', 1000, 10),
+test('groups operations and profiles and plots available counts, including measured zero', () => {
+  const [chat, embeddings] = groupCalls([
+    call('one.rev', 'one', 'chat', 101, 20, 4),
+    call('two.rev', 'two', 'embeddings', 0, 12),
+    call('two.rev', 'two', 'chat', 40, undefined, 0),
+    call('one.rev', 'one', 'chat', 28, 5),
+    call('old.rev', 'old', 'chat', 500),
   ]);
 
   deepStrictEqual(
-    operations.map(({ operation, label, endpoint }) => [operation, label, endpoint]),
-    [
-      ['embeddings', 'Векторизация', 'POST /v1/embeddings'],
-      ['bge_encode', 'Кодирование BGE', 'POST /v1/bge_encode'],
-    ],
+    [chat.operation, chat.label, chat.endpoint],
+    ['chat', 'Генерация', 'POST /v1/chat'],
   );
-  const [embeddings, encode] = operations;
-  deepStrictEqual(embeddings.series, [
-    {
-      id: 'slow.rev',
-      name: 'slow',
-      points: [
-        { started: 1000, duration: 10 },
-        { started: 3000, duration: 30 },
+  const chartPoints = (operation, metric) =>
+    seriesForMetric(operation.series, metric).map(({ id, points }) => [
+      id,
+      points.map(({ tokens, duration }) => [tokens, duration]),
+    ]);
+  deepStrictEqual(chartPoints(chat, 'inputTokens'), [
+    [
+      'one.rev',
+      [
+        [20, 101],
+        [5, 28],
       ],
-    },
-    { id: 'fast.rev', name: 'fast', points: [{ started: 2000, duration: 40 }] },
+    ],
   ]);
-  deepStrictEqual(encode.series, [
-    { id: 'slow.rev', name: 'slow', points: [{ started: 4000, duration: 0 }] },
+  deepStrictEqual(chartPoints(chat, 'outputTokens'), [
+    ['one.rev', [[4, 101]]],
+    ['two.rev', [[0, 40]]],
   ]);
-  deepStrictEqual(timeDomain(embeddings.series), [1000, 3000]);
+  deepStrictEqual(chartPoints(chat, 'totalTokens'), [['one.rev', [[24, 101]]]]);
+  deepStrictEqual(chartPoints(embeddings, 'inputTokens'), [['two.rev', [[12, 0]]]]);
+  deepStrictEqual(chartPoints(embeddings, 'totalTokens'), []);
 });
 
 test('disambiguates equal profile names with distinct revision suffixes', () => {
   const [operation] = groupCalls([
-    call('example.bge.111122223333', 'bge', 'embeddings', 3000, 30),
-    call('example.bge.111122224444', 'bge', 'embeddings', 2000, 20),
-    call('example.bge.aa9922223333', 'bge', 'embeddings', 1000, 10),
+    call('example.bge.111122223333', 'bge', 'embeddings', 30, 3),
+    call('example.bge.111122224444', 'bge', 'embeddings', 20, 2),
+    call('example.bge.aa9922223333', 'bge', 'embeddings', 10, 1),
   ]);
 
   deepStrictEqual(
@@ -58,29 +62,60 @@ test('disambiguates equal profile names with distinct revision suffixes', () => 
   );
 });
 
-test('appending older calls and new operations retains existing operation keys and profile order', () => {
+test('appending older rows adds points without reordering operations or profiles', () => {
   const calls = [
-    call('slow.rev', 'slow', 'embeddings', 3000, 30),
-    call('fast.rev', 'fast', 'embeddings', 2000, 40),
+    call('slow.rev', 'slow', 'embeddings', 30, 3),
+    call('fast.rev', 'fast', 'embeddings', 40, 4),
   ];
   const updated = groupCalls([
     ...calls,
-    call('extra.rev', 'extra', 'bge_encode', 1000, 20),
-    call('fast.rev', 'fast', 'embeddings', 1000, 10),
+    call('extra.rev', 'extra', 'chat', 20, 2, 1),
+    call('fast.rev', 'fast', 'embeddings', 10, 1),
   ]);
 
   deepStrictEqual(
     updated.map(({ operation }) => operation),
-    ['embeddings', 'bge_encode'],
+    ['embeddings', 'chat'],
   );
   deepStrictEqual(
     updated[0].series.map(({ id }) => id),
     ['slow.rev', 'fast.rev'],
   );
-  strictEqual(updated[0].series[1].points[0].started, 1000);
+  deepStrictEqual(
+    updated[0].series[1].points.map(({ inputTokens }) => inputTokens),
+    [4, 1],
+  );
 });
 
-test('gives a single timestamp a visible time range', () => {
-  const [from, to] = timeDomain([{ points: [{ started: 10000, duration: 0 }] }]);
-  strictEqual(from < 10000 && to > 10000, true);
+test('reads counts from history rows without reading timestamps', () => {
+  const row = (fields) => ({
+    dataset: {
+      modelId: 'profile',
+      modelName: 'Model',
+      operation: 'chat',
+      durationMs: '0',
+      ...fields,
+    },
+    querySelector: (selector) => {
+      deepStrictEqual(selector, '[data-operation-label]');
+      return { textContent: 'Генерация' };
+    },
+  });
+  const calls = readCalls({
+    rows: [
+      row({ inputTokens: '28', outputTokens: '0' }),
+      row({}),
+      row({ inputTokens: '-4', outputTokens: '2.5' }),
+      row({ inputTokens: '1', outputTokens: '' }),
+    ],
+  });
+  deepStrictEqual(
+    calls.map(({ duration, inputTokens, outputTokens }) => [duration, inputTokens, outputTokens]),
+    [
+      [0, 28, 0],
+      [0, undefined, undefined],
+      [0, undefined, undefined],
+      [0, 1, undefined],
+    ],
+  );
 });

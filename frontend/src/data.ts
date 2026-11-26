@@ -1,6 +1,13 @@
-export type Point = { started: number; duration: number };
+type CallUsage = {
+  duration: number;
+  inputTokens?: number;
+  outputTokens?: number;
+};
+export type Point = CallUsage & { tokens: number };
+export const tokenMetrics = ['inputTokens', 'outputTokens', 'totalTokens'] as const;
+export type TokenMetric = (typeof tokenMetrics)[number];
 
-export type Call = Point & {
+export type Call = CallUsage & {
   modelId: string;
   profile: string;
   operation: string;
@@ -15,14 +22,23 @@ export type Operation = {
   series: ProfileSeries[];
 };
 
-type ProfileSeries = { id: string; name: string; points: Point[] };
+type ProfileSeries = { id: string; name: string; points: CallUsage[] };
 
 export function groupCalls(calls: ReadonlyArray<Call>): Operation[] {
   const operations = new Map<
     string,
     Omit<Operation, 'series'> & { profiles: Map<string, ProfileSeries> }
   >();
-  for (const { modelId, profile, operation, label, endpoint, started, duration } of calls) {
+  for (const {
+    modelId,
+    profile,
+    operation,
+    label,
+    endpoint,
+    duration,
+    inputTokens,
+    outputTokens,
+  } of calls) {
     let group = operations.get(operation);
     if (!group) {
       group = { operation, label, endpoint, profiles: new Map() };
@@ -33,7 +49,7 @@ export function groupCalls(calls: ReadonlyArray<Call>): Operation[] {
       series = { id: modelId, name: profile, points: [] };
       group.profiles.set(modelId, series);
     }
-    series.points.push({ started, duration });
+    series.points.push({ duration, inputTokens, outputTokens });
   }
   return Array.from(operations.values(), ({ profiles, ...operation }) => {
     const idsByName = new Map<string, string[]>();
@@ -47,7 +63,6 @@ export function groupCalls(calls: ReadonlyArray<Call>): Operation[] {
       series: Array.from(profiles.values(), (series) => ({
         ...series,
         name: profileName(series, idsByName.get(series.name) ?? []),
-        points: series.points.sort((a, b) => a.started - b.started),
       })),
     };
   });
@@ -66,35 +81,54 @@ function profileName({ id, name }: ProfileSeries, matchingIds: string[]) {
   return `${name} · ${id.slice(-length)}`;
 }
 
-export function timeDomain(series: ReadonlyArray<Pick<ProfileSeries, 'points'>>): [number, number] {
-  let min = Infinity;
-  let max = -Infinity;
-  for (const { points } of series) {
-    for (const { started } of points) {
-      min = Math.min(min, started);
-      max = Math.max(max, started);
-    }
-  }
-  return min === max ? [min - 1000, max + 1000] : [min, max];
+export function seriesForMetric(series: ReadonlyArray<ProfileSeries>, metric: TokenMetric) {
+  return series.flatMap(({ points, ...profile }, index) => {
+    const measured = points.flatMap((point): Point[] => {
+      const { inputTokens, outputTokens } = point;
+      const tokens =
+        metric === 'totalTokens'
+          ? inputTokens !== undefined && outputTokens !== undefined
+            ? inputTokens + outputTokens
+            : undefined
+          : point[metric];
+      return tokens !== undefined && Number.isSafeInteger(tokens) ? [{ ...point, tokens }] : [];
+    });
+    return measured.length ? [{ ...profile, index, points: measured }] : [];
+  });
+}
+
+function readCount(value: string | undefined): number | undefined {
+  if (value === undefined || !/^\d+$/.test(value)) return undefined;
+  const number = Number(value);
+  return Number.isSafeInteger(number) ? number : undefined;
 }
 
 export function readCalls(table: HTMLTableSectionElement): Call[] {
   const calls: Call[] = [];
   for (const row of table.rows) {
-    const { modelId, modelName: profile, operation, endpoint, durationMs } = row.dataset;
-    const started = Date.parse(row.querySelector('time')?.dateTime ?? '');
-    const duration = durationMs === undefined ? NaN : Number(durationMs);
-    if (
-      !modelId ||
-      !profile ||
-      !operation ||
-      !Number.isFinite(started) ||
-      !Number.isFinite(duration)
-    ) {
-      continue;
-    }
+    const {
+      modelId,
+      modelName: profile,
+      operation,
+      endpoint,
+      durationMs,
+      inputTokens,
+      outputTokens,
+    } = row.dataset;
+    const duration = readCount(durationMs);
+    if (!modelId || !profile || !operation || duration === undefined) continue;
+
     const label = row.querySelector('[data-operation-label]')?.textContent || operation;
-    calls.push({ modelId, profile, operation, label, endpoint: endpoint ?? '', started, duration });
+    calls.push({
+      modelId,
+      profile,
+      operation,
+      label,
+      endpoint: endpoint ?? '',
+      duration,
+      inputTokens: readCount(inputTokens),
+      outputTokens: readCount(outputTokens),
+    });
   }
   return calls;
 }

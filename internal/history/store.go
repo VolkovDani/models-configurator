@@ -18,15 +18,27 @@ import (
 const retention = 10_000
 
 type Call struct {
-	ID         uint64    `json:"id"`
-	ModelID    string    `json:"model_id"`
-	Profile    string    `json:"profile"`
-	Provider   string    `json:"provider"`
-	Operation  string    `json:"operation"`
-	StartedAt  time.Time `json:"started_at"`
-	DurationMS int64     `json:"duration_ms"`
-	Status     int       `json:"status"`
-	Outcome    string    `json:"outcome"`
+	ID           uint64    `json:"id"`
+	ModelID      string    `json:"model_id"`
+	Profile      string    `json:"profile"`
+	Provider     string    `json:"provider"`
+	Operation    string    `json:"operation"`
+	StartedAt    time.Time `json:"started_at"`
+	DurationMS   int64     `json:"duration_ms"`
+	Status       int       `json:"status"`
+	Outcome      string    `json:"outcome"`
+	InputTokens  *int      `json:"input_tokens,omitempty"`
+	OutputTokens *int      `json:"output_tokens,omitempty"`
+}
+
+func (call Call) clone() Call {
+	if call.InputTokens != nil {
+		call.InputTokens = new(*call.InputTokens)
+	}
+	if call.OutputTokens != nil {
+		call.OutputTokens = new(*call.OutputTokens)
+	}
+	return call
 }
 
 type Page struct {
@@ -92,6 +104,7 @@ func (s *Store) Record(call Call) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	call = call.clone()
 	call.ID = 1
 	if n := len(s.calls); n != 0 {
 		call.ID = s.calls[n-1].ID + 1
@@ -180,7 +193,7 @@ func (s *Store) List(before uint64, limit int) Page {
 	count := min(limit, max(0, end-start))
 	page := Page{Calls: make([]Call, 0, count)}
 	for i := end - 1; i >= end-count; i-- {
-		page.Calls = append(page.Calls, s.calls[i])
+		page.Calls = append(page.Calls, s.calls[i].clone())
 	}
 	if count > 0 && end-count > start {
 		page.NextBefore = s.calls[end-count].ID
