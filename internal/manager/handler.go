@@ -13,6 +13,29 @@ import (
 	"github.com/VolkovDani/models-configurator/internal/history"
 )
 
+const (
+	chatOperation       = "chat"
+	embeddingsOperation = "embeddings"
+	decisionOperation   = "decision"
+	bgeOperation        = "bge_encode"
+)
+
+// InferenceEndpoint reports the HTTP method and path for a recorded operation.
+func InferenceEndpoint(operation string) string {
+	switch operation {
+	case chatOperation:
+		return "POST /v1/chat/completions"
+	case embeddingsOperation:
+		return "POST /v1/embeddings"
+	case decisionOperation:
+		return "POST /v1/decisions"
+	case bgeOperation:
+		return "POST /v1/bge-m3/encode"
+	default:
+		return ""
+	}
+}
+
 type inventoryItem struct {
 	ID       string `json:"id"`
 	Object   string `json:"object"`
@@ -67,7 +90,7 @@ func NewWithHistory(cfg Config, maxParallel int, record func(history.Call)) (htt
 	mux.HandleFunc("GET /v1/models", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"object": "list", "data": entries})
 	})
-	mux.HandleFunc("POST /v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(InferenceEndpoint(chatOperation), func(w http.ResponseWriter, r *http.Request) {
 		var in chatRequestBody
 		if !readInput(w, r, &in) {
 			return
@@ -84,9 +107,9 @@ func NewWithHistory(cfg Config, maxParallel int, record func(history.Call)) (htt
 			fail(w, http.StatusBadRequest, "OpenVINO NPU requires strict JSON schema output and uses fixed sampling")
 			return
 		}
-		queue.run(w, r, p, "chat", func(ctx context.Context) (any, error) { return p.chat(ctx, in) })
+		queue.run(w, r, p, chatOperation, func(ctx context.Context) (any, error) { return p.chat(ctx, in) })
 	})
-	mux.HandleFunc("POST /v1/embeddings", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(InferenceEndpoint(embeddingsOperation), func(w http.ResponseWriter, r *http.Request) {
 		var in embeddingRequest
 		if !readInput(w, r, &in) {
 			return
@@ -103,9 +126,9 @@ func NewWithHistory(cfg Config, maxParallel int, record func(history.Call)) (htt
 			fail(w, 400, "BGE-M3 returns 1024 dimensions")
 			return
 		}
-		queue.run(w, r, p, "embeddings", func(ctx context.Context) (any, error) { return p.embed(ctx, in) })
+		queue.run(w, r, p, embeddingsOperation, func(ctx context.Context) (any, error) { return p.embed(ctx, in) })
 	})
-	mux.HandleFunc("POST /v1/decisions", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(InferenceEndpoint(decisionOperation), func(w http.ResponseWriter, r *http.Request) {
 		var in decisionRequest
 		if !readInput(w, r, &in) {
 			return
@@ -122,9 +145,9 @@ func NewWithHistory(cfg Config, maxParallel int, record func(history.Call)) (htt
 			fail(w, http.StatusBadRequest, "decision digest does not match configured model")
 			return
 		}
-		queue.run(w, r, p, "decision", func(ctx context.Context) (any, error) { return p.decide(ctx, in) })
+		queue.run(w, r, p, decisionOperation, func(ctx context.Context) (any, error) { return p.decide(ctx, in) })
 	})
-	mux.HandleFunc("POST /v1/bge-m3/encode", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(InferenceEndpoint(bgeOperation), func(w http.ResponseWriter, r *http.Request) {
 		var in bgeRequest
 		if !readInput(w, r, &in) {
 			return
@@ -141,7 +164,7 @@ func NewWithHistory(cfg Config, maxParallel int, record func(history.Call)) (htt
 			fail(w, 404, "unknown model for this operation")
 			return
 		}
-		queue.run(w, r, p, "bge_encode", func(ctx context.Context) (any, error) { return p.bgeEncode(ctx, in.Input, in.Modes) })
+		queue.run(w, r, p, bgeOperation, func(ctx context.Context) (any, error) { return p.bgeEncode(ctx, in.Input, in.Modes) })
 	})
 	return mux, nil
 }

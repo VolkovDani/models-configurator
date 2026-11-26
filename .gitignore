@@ -7,3 +7,5 @@ __pycache__/
 /.npu/
 
 /.bge/
+
+/frontend/node_modules/
