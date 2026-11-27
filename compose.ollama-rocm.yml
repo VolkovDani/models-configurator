@@ -1,0 +1,18 @@
+# Use with compose.yml and the rocm profile on a host with a supported AMD GPU.
+services:
+  ollama:
+    profiles: !override [rocm]
+    image: ollama/ollama:0.40.16-rocm@sha256:85b3c895222b1ddc9d63c40b20fc74f37a37593dcbbdfbf28910a925e43ead00
+    devices:
+      - /dev/kfd:/dev/kfd:rw
+      - ${MODELS_OLLAMA_DRI_DEVICE:?Set the selected AMD render node}:${MODELS_OLLAMA_DRI_DEVICE}:rw
+    group_add:
+      - ${MODELS_OLLAMA_RENDER_GID:?Set the numeric group of the selected render node}
+      - ${MODELS_OLLAMA_KFD_GID:?Set the numeric group of /dev/kfd}
+    environment:
+      OLLAMA_VULKAN: '0'
+      OLLAMA_IGPU_ENABLE: '1'
+      OLLAMA_NUM_PARALLEL: '1'
+      OLLAMA_MAX_LOADED_MODELS: '1'
+      CUDA_VISIBLE_DEVICES: '-1'
+      ROCR_VISIBLE_DEVICES: ${MODELS_OLLAMA_GPU_UUID:?Set the selected AMD GPU UUID from rocminfo}

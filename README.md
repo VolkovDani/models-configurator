@@ -18,13 +18,22 @@ Open http://127.0.0.1:8317/ for the status page. This configuration starts only 
 
 ## Add models
 
-For local CPU inference, explicitly start Ollama and pull the weights you choose. The following commands also print the full SHA-256 digests of the downloaded manifests:
+For local CPU inference, explicitly start Ollama and pull the weights you choose.
 
 ```bash
 docker compose --profile cpu up -d ollama
 docker compose exec ollama ollama pull qwen2.5:7b
 docker compose exec ollama ollama pull bge-m3:567m
-docker compose exec ollama sha256sum /root/.ollama/models/manifests/registry.ollama.ai/library/{qwen2.5/7b,bge-m3/567m}
+```
+
+Read the full digests as reported by Ollama's private `/api/tags` endpoint. The example uses `jq` to display tags and digests and keeps the Ollama port private.
+
+```bash
+ollama_container=$(docker compose ps -q ollama)
+docker run --rm --network "container:$ollama_container" \
+  alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f \
+  wget -qO- http://127.0.0.1:11434/api/tags |
+  jq -r '.models[] | [.name, .digest] | @tsv'
 ```
 
 Edit the private `models.json`. Specify the Ollama tag explicitly, including `:latest` when applicable. Replace the digest placeholders with those full values. Keep only the entries you intend to use. The external endpoint below is an example; select the deployment and its version explicitly.
@@ -40,6 +49,8 @@ Edit the private `models.json`. Specify the Ollama tag explicitly, including `:l
 ```
 
 For an authenticated upstream, set the named variable in a private `providers.env` (Compose) or in the server process environment (native). Use HTTPS when sending credentials or content across untrusted networks. Recreate the manager after configuration or secret changes: `docker compose up -d --force-recreate models-configurator`. Replacing weights behind an external deployment requires the operator to change its revision. Ollama digests are checked before and after inference. Persistent weights are stored in the manager's Ollama volume.
+
+For GPU inference, see the [Ollama GPU profiles and migration guide](docs/ollama-gpu.md).
 
 ## Web panel appearance
 
