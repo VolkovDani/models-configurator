@@ -5,7 +5,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
-	"html/template"
 	"net/http"
 	"slices"
 	"strconv"
@@ -17,7 +16,7 @@ import (
 //go:embed settings.html
 var settingsHTML string
 
-var settingsPage = template.Must(template.New("settings").Parse(settingsHTML))
+var settingsPage = newPanelTemplate("settings", settingsHTML, nil)
 
 type settingsEditor struct {
 	cfg     manager.Config
@@ -69,7 +68,7 @@ func (s settingsEditor) render(w http.ResponseWriter, r *http.Request, code int,
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Language", words.Lang)
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 	w.Header().Set("Referrer-Policy", "same-origin")
 	w.WriteHeader(code)
 	_ = settingsPage.Execute(w, view)

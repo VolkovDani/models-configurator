@@ -18,7 +18,12 @@ import {
   tokenMetrics,
 } from './data.ts';
 
-const colors = ['#176957', '#315ca5', '#975915', '#8b4287', '#a83b35', '#067282'];
+function seriesColor(index: number) {
+  if (index < 6) return `var(--ui-plot-${index + 1})`;
+
+  const hue = (index * 137.508) % 360;
+  return `light-dark(hsl(${hue} 60% 36%), hsl(${hue} 60% 70%))`;
+}
 
 type Labels = {
   title: string;
@@ -61,7 +66,7 @@ function HistoryChart({
   const profiles = (selected?.series ?? []).map((profile) => ({
     ...profile,
     scatterId: `history-profile-${profile.id}`,
-    color: colors[profile.index] ?? `hsl(${(profile.index * 137.508) % 360} 60% 36%)`,
+    color: seriesColor(profile.index),
   }));
   const numbers = new Intl.NumberFormat(lang);
   let durationMax = 0;
@@ -122,7 +127,7 @@ function HistoryChart({
                 margin={{ top: 8, right: 22, bottom: 5, left: 2 }}
                 title={operation.label}
               >
-                <CartesianGrid stroke="#e1e7e1" vertical={false} />
+                <CartesianGrid stroke="var(--ui-divider)" vertical={false} />
                 <XAxis
                   dataKey="tokens"
                   name={labels[selected.metric]}
@@ -132,7 +137,8 @@ function HistoryChart({
                   allowDecimals={false}
                   minTickGap={20}
                   tickFormatter={(value: number) => numbers.format(value)}
-                  tick={{ fontSize: 11, fill: '#445b52' }}
+                  stroke="var(--ui-field-border)"
+                  tick={{ fontSize: 11, fill: 'var(--ui-muted)' }}
                 />
                 <YAxis
                   dataKey="duration"
@@ -143,7 +149,8 @@ function HistoryChart({
                   tickCount={4}
                   allowDecimals={false}
                   tickFormatter={(value: number) => numbers.format(value)}
-                  tick={{ fontSize: 11, fill: '#445b52' }}
+                  stroke="var(--ui-field-border)"
+                  tick={{ fontSize: 11, fill: 'var(--ui-muted)' }}
                 />
                 <Tooltip
                   cursor={false}

@@ -41,6 +41,10 @@ Edit the private `models.json`. Specify the Ollama tag explicitly, including `:l
 
 For an authenticated upstream, set the named variable in a private `providers.env` (Compose) or in the server process environment (native). Use HTTPS when sending credentials or content across untrusted networks. Recreate the manager after configuration or secret changes: `docker compose up -d --force-recreate models-configurator`. Replacing weights behind an external deployment requires the operator to change its revision. Ollama digests are checked before and after inference. Persistent weights are stored in the manager's Ollama volume.
 
+## Web panel appearance
+
+The model inventory, settings, and call history follow your system theme by default. Use **Theme** in the page header to choose **System**, **Light**, or **Dark**. Your browser remembers the choice across those pages, including the history chart.
+
 ## Settings in the web panel
 
 Open **Model settings** from the model inventory. Set the manager concurrency limit, rename profiles and choose which should be available to clients. For Ollama you can choose an installed local model with a verified digest and select chat or embeddings if the model supports that role. Existing decision profiles keep their assigned model and role. Chat profiles expose the context, response token limit, temperature and top P. Explicit request options take precedence over the Ollama chat defaults.

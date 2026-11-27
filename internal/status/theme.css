@@ -1,0 +1,54 @@
+:root {
+  color-scheme: light dark;
+  --ui-background: light-dark(#f5f7f3, #101915);
+  --ui-text: light-dark(#18352f, #e7f0e9);
+  --ui-muted: light-dark(#445b52, #b5c8bc);
+  --ui-surface: light-dark(#fff, #18241e);
+  --ui-input: light-dark(#fff, #202f27);
+  --ui-border: light-dark(#cbd8cf, #40564b);
+  --ui-field-border: light-dark(#728b81, #739083);
+  --ui-divider: light-dark(#e1e7e1, #324339);
+  --ui-table-heading: light-dark(#eaf0eb, #22332a);
+  --ui-link: light-dark(#13594b, #8ee0c8);
+  --ui-focus: light-dark(#238275, #8ee0c8);
+  --ui-primary: light-dark(#13594b, #9adfc9);
+  --ui-on-primary: light-dark(#fff, #102a21);
+  --ui-success: light-dark(#13634f, #8ddeaf);
+  --ui-warning: light-dark(#665126, #f0ca82);
+  --ui-failure: light-dark(#744013, #efb88b);
+  --ui-error: light-dark(#8b2525, #ffb3ae);
+  --ui-plot-1: light-dark(#176957, #72d8ba);
+  --ui-plot-2: light-dark(#315ca5, #88b5fb);
+  --ui-plot-3: light-dark(#975915, #f4b66f);
+  --ui-plot-4: light-dark(#8b4287, #d6a0e7);
+  --ui-plot-5: light-dark(#a83b35, #f79790);
+  --ui-plot-6: light-dark(#067282, #6dd7e8);
+  font-family: Inter, system-ui, sans-serif;
+  color: var(--ui-text);
+  background: var(--ui-background);
+}
+
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+
+* { box-sizing: border-box; }
+a { color: var(--ui-link); text-underline-offset: .24em; }
+:focus-visible { outline: 3px solid var(--ui-focus); outline-offset: 3px; }
+
+.theme-picker:not([hidden]) {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  color: var(--ui-muted);
+  font-size: .9rem;
+}
+
+.theme-picker select {
+  width: auto;
+  padding: .3rem .5rem;
+  font: inherit;
+  color: var(--ui-text);
+  background: var(--ui-input);
+  border: 1px solid var(--ui-field-border);
+  border-radius: .35rem;
+}

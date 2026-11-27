@@ -14,7 +14,7 @@ import (
 
 //go:embed history.html
 var historyHTML string
-var historyPage = template.Must(template.New("history").Funcs(template.FuncMap{"endpoint": manager.InferenceEndpoint}).Parse(historyHTML))
+var historyPage = newPanelTemplate("history", historyHTML, template.FuncMap{"endpoint": manager.InferenceEndpoint})
 
 //go:embed history.js
 var historyScript string
@@ -85,7 +85,7 @@ func (h historyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Language", words.Lang)
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	historyPage.Execute(w, historyView{locale: words, Page: page, OlderPage: before != 0})
 }
