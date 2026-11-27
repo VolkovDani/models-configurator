@@ -17,13 +17,30 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "history" {
+		if err := historyCommand(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	config := flag.String("config", "models.json", "path to the model configuration")
 	listen := flag.String("listen", "127.0.0.1:8317", "HTTP listen address")
+	usage := flag.Usage
+	flag.Usage = func() {
+		usage()
+		fmt.Fprintln(flag.CommandLine.Output(), "\n  history clear\n    Back up and clear model call history while the server is stopped")
+	}
 	flag.Parse()
 	cfg, err := manager.LoadConfig(*config)
 	if err != nil {
 		log.Fatal(err)
 	}
+	release, err := history.Lock(historyPath())
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer release()
 	handler, err := service(cfg)
 	if err != nil {
 		log.Fatal(err)
@@ -39,6 +56,46 @@ func main() {
 	}
 	log.Printf("Models Configurator listening on %s", *listen)
 	log.Fatal(srv.ListenAndServe())
+}
+
+func historyPath() string {
+	if path := os.Getenv("MODELS_HISTORY_PATH"); path != "" {
+		return path
+	}
+	return "logs/model-history.jsonl"
+}
+
+func historyCommand(args []string) error {
+	flags := flag.NewFlagSet("history clear", flag.ContinueOnError)
+	flags.Usage = func() {
+		fmt.Fprintln(flags.Output(), "Usage: models-configurator history clear\nBack up and clear model call history while the server is stopped.")
+	}
+	if len(args) == 0 || (len(args) == 1 && (args[0] == "-h" || args[0] == "--help")) {
+		flags.Usage()
+		return nil
+	}
+	if args[0] != "clear" {
+		return errors.New("expected 'history clear'")
+	}
+	if err := flags.Parse(args[1:]); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if flags.NArg() != 0 {
+		return errors.New("'history clear' takes no arguments")
+	}
+	backup, err := history.Clear(historyPath())
+	if err != nil {
+		return err
+	}
+	if backup == "" {
+		fmt.Println("Model call history is already empty.")
+	} else {
+		fmt.Printf("Cleared model call history. Backup saved at %s\n", backup)
+	}
+	return nil
 }
 
 func parallelRequestLimit() (int, error) {
@@ -70,11 +127,7 @@ func service(cfg manager.Config) (http.Handler, error) {
 			return nil, fmt.Errorf("apply model settings: %w", err)
 		}
 	}
-	path := os.Getenv("MODELS_HISTORY_PATH")
-	if path == "" {
-		path = "logs/model-history.jsonl"
-	}
-	calls, err := history.Open(path)
+	calls, err := history.Open(historyPath())
 	if err != nil {
 		return nil, fmt.Errorf("open model call history: %w", err)
 	}
