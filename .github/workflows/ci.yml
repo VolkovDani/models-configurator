@@ -49,6 +49,17 @@ jobs:
           curl --retry 15 --retry-all-errors --fail http://127.0.0.1:8317/v1/models | jq -e '.data == []'
           curl --fail http://127.0.0.1:8317/ >/dev/null
           curl --fail --silent http://127.0.0.1:8317/history-chart.js >/dev/null
+      - name: Verify the history maintenance command
+        run: |
+          if output=$(docker compose run --rm -T --no-deps models-configurator history clear 2>&1); then
+            echo "Clearing history should fail while the manager is running"
+            exit 1
+          fi
+          grep -F 'stop the service' <<< "$output"
+          docker compose stop models-configurator
+          docker compose run --rm -T --no-deps models-configurator history clear
+          docker compose start models-configurator
+          curl --retry 15 --retry-all-errors --fail http://127.0.0.1:8317/history.json | jq -e '.calls == []'
       - if: always()
         run: docker compose down --volumes
   automerge:

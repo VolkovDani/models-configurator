@@ -92,6 +92,20 @@ For programmatic access, use `GET /history.json`. Each record may include `input
 
 The most recent 10,000 records are available across restarts. Compose stores them in the `model_history` volume, which survives container replacement. On the host, the default is `logs/model-history.jsonl` relative to the working directory. Set `MODELS_HISTORY_PATH` to use a different file. Each manager process needs its own file. After startup, write failures are logged and inference responses remain available.
 
+### Clear model call history
+
+`models-configurator history clear` moves the entire history file into a private backup directory next to the original and prints the backup path. The manager starts with empty history on its next launch. If history is already empty, the command succeeds without creating a backup. The command uses a file lock shared with the manager to prevent clearing while the manager is writing history. Native CLI clearing is available on Linux, macOS, DragonFly BSD, FreeBSD, NetBSD, and OpenBSD.
+
+For Docker Compose, first rebuild and recreate the manager if you are upgrading from a version without this command. Use the same Compose project, files, and environment as the running manager.
+
+```bash
+docker compose stop models-configurator &&
+  docker compose run --rm --no-deps models-configurator history clear &&
+  docker compose start models-configurator
+```
+
+For a native launch, stop the manager and run `models-configurator history clear` from its working directory with the same `MODELS_HISTORY_PATH`, if set. When running from source, use `go run ./cmd/models-configurator history clear`. Then start the manager again.
+
 ## Concurrent requests
 
 The manager runs one inference or token count request at a time by default. To allow two independent runtimes to work at once, set the following in the manager's private `.env` and apply it with `docker compose up -d models-configurator`. For a native launch, export the variable before starting the server.
