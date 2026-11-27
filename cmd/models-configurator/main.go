@@ -142,6 +142,7 @@ func service(cfg manager.Config) (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.Handle("/v1/", api)
 	apidocs.Register(mux)
+	status.RegisterTheme(mux)
 	status.RegisterHistory(mux, calls)
 	status.RegisterSettings(mux, cfg, settings)
 	mux.Handle("/", status.New(active))

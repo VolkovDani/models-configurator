@@ -5,7 +5,6 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
-	"html/template"
 	"net/http"
 	"strings"
 	"sync"
@@ -16,7 +15,7 @@ import (
 
 //go:embed panel.html
 var htmlSource string
-var page = template.Must(template.New("panel").Parse(htmlSource))
+var page = newPanelTemplate("panel", htmlSource, nil)
 
 type row struct {
 	Name     string `json:"name"`
@@ -86,7 +85,7 @@ func (p *panel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	words := localize(r)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Language", words.Lang)
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	page.Execute(w, view{snapshot: f.result, locale: words})
 }

@@ -1,0 +1,12 @@
+{{define "theme-head"}}<meta name="color-scheme" content="light dark">
+<script src="/theme.js"></script>
+<link rel="stylesheet" href="/theme.css">{{end}}
+
+{{define "theme-picker"}}<div class="theme-picker" hidden>
+<label for="panel-theme">{{.Label "theme"}}</label>
+<select id="panel-theme">
+<option value="system">{{.Label "theme_system"}}</option>
+<option value="light">{{.Label "theme_light"}}</option>
+<option value="dark">{{.Label "theme_dark"}}</option>
+</select>
+</div>{{end}}
