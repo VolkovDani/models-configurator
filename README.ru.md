@@ -18,13 +18,22 @@ curl http://127.0.0.1:8317/v1/models
 
 ## Добавление моделей
 
-Для локального инференса на CPU явно запустите Ollama и загрузите нужные веса. Последняя команда выводит полные SHA-256-манифесты скачанных моделей в виде контрольных сумм:
+Для локального инференса на CPU явно запустите Ollama и загрузите нужные веса.
 
 ```bash
 docker compose --profile cpu up -d ollama
 docker compose exec ollama ollama pull qwen2.5:7b
 docker compose exec ollama ollama pull bge-m3:567m
-docker compose exec ollama sha256sum /root/.ollama/models/manifests/registry.ollama.ai/library/{qwen2.5/7b,bge-m3/567m}
+```
+
+Получите полные дайджесты из приватного endpoint Ollama `/api/tags`. Пример выводит теги и дайджесты с помощью `jq` и оставляет порт Ollama закрытым для клиентов.
+
+```bash
+ollama_container=$(docker compose ps -q ollama)
+docker run --rm --network "container:$ollama_container" \
+  alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f \
+  wget -qO- http://127.0.0.1:11434/api/tags |
+  jq -r '.models[] | [.name, .digest] | @tsv'
 ```
 
 Отредактируйте приватный `models.json`. Укажите тег Ollama явно, включая `:latest`, если он используется. Подставьте полные контрольные суммы и оставьте только нужные записи. Адрес внешнего провайдера дан для примера. Выберите конкретное развёртывание и его версию.
@@ -40,6 +49,8 @@ docker compose exec ollama sha256sum /root/.ollama/models/manifests/registry.oll
 ```
 
 Для провайдера с авторизацией задайте указанную переменную в приватном `providers.env` для Compose или в окружении процесса при запуске на хосте. Для передачи ключей и содержимого по недоверенной сети используйте HTTPS. После изменения конфигурации или ключа пересоздайте менеджер командой `docker compose up -d --force-recreate models-configurator`. При замене весов внешнего развёртывания оператор обновляет его ревизию. Менеджер проверяет digest Ollama до и после инференса. Локальные веса хранятся в постоянном томе Ollama менеджера.
+
+Для инференса на GPU см. [профили Ollama и порядок переноса](docs/ollama-gpu.ru.md).
 
 ## Тема веб-панели
 

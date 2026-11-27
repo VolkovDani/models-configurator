@@ -1,0 +1,22 @@
+# Use with compose.yml and the amd-vulkan profile on a Linux host with AMD graphics.
+services:
+  ollama:
+    profiles: !override [amd-vulkan]
+    image: models-configurator-ollama-amd-vulkan:0.40.16
+    build:
+      context: .
+      dockerfile: Dockerfile.ollama-amd-vulkan
+    devices:
+      - ${MODELS_OLLAMA_DRI_DEVICE:?Set the selected AMD render node}:${MODELS_OLLAMA_DRI_DEVICE}:rw
+    group_add:
+      - ${MODELS_OLLAMA_RENDER_GID:?Set the numeric group of the selected render node}
+    environment:
+      OLLAMA_VULKAN: '1'
+      OLLAMA_IGPU_ENABLE: '1'
+      OLLAMA_NUM_PARALLEL: '1'
+      OLLAMA_MAX_LOADED_MODELS: '1'
+      CUDA_VISIBLE_DEVICES: '-1'
+      ROCR_VISIBLE_DEVICES: '-1'
+      VK_DRIVER_FILES: /etc/models-configurator-amd-vulkan.json
+      VK_ICD_FILENAMES: /etc/models-configurator-amd-vulkan.json
+      GGML_VK_VISIBLE_DEVICES: '0'
